@@ -121,6 +121,7 @@ def _fetch_news_for_queries(queries, limit=20):
             if not uid or uid in seen or not item.get("title") or pub_time < cutoff:
                 continue
             seen[uid] = {
+                "uuid": uid,
                 "title": item["title"],
                 "publisher": item.get("publisher") or "",
                 "link": item.get("link") or "",
@@ -129,9 +130,11 @@ def _fetch_news_for_queries(queries, limit=20):
     return sorted(seen.values(), key=lambda x: x["time"], reverse=True)[:limit]
 
 
-# Cached per article link -- an article's importance doesn't change once
-# classified, so this never needs to expire, only grow (negligible for a
-# personal dashboard's news volume).
+# Cached per article uuid (Yahoo's own id, always unique -- unlike link,
+# which is occasionally blank and would otherwise collide multiple unrelated
+# articles onto the same cache entry). An article's importance doesn't
+# change once classified, so this never needs to expire, only grow
+# (negligible for a personal dashboard's news volume).
 _importance_cache = {}
 
 
@@ -140,16 +143,17 @@ def _filter_market_moving(items):
     major currency -- filters out routine single-company earnings, opinion
     columns, and generic "markets today" wraps that would otherwise clutter
     the panel. Fails open (keeps everything) if no ANTHROPIC_API_KEY is
-    configured or the call errors, rather than silently showing an empty
-    panel because of a missing key or a transient API hiccup."""
+    configured or the call errors or times out, rather than silently
+    showing an empty panel because of a missing key or a transient API
+    hiccup."""
     if not items:
         return items
-    uncached = [it for it in items if it["link"] not in _importance_cache]
+    uncached = [it for it in items if it["uuid"] not in _importance_cache]
     if uncached:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             for it in uncached:
-                _importance_cache[it["link"]] = True
+                _importance_cache[it["uuid"]] = True
         else:
             try:
                 import anthropic
@@ -167,17 +171,17 @@ def _filter_market_moving(items):
                     f"list, nothing else.\n\n{numbered}"
                 )
                 response = client.messages.create(
-                    model=ai_bias.MODEL, max_tokens=500,
+                    model=ai_bias.MODEL, max_tokens=500, timeout=15,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 text = "".join(b.text for b in response.content if b.type == "text")
                 flags = json.loads(re.search(r"\[.*\]", text, re.DOTALL).group(0))
                 for it, flag in zip(uncached, flags):
-                    _importance_cache[it["link"]] = bool(flag)
+                    _importance_cache[it["uuid"]] = bool(flag)
             except Exception:
                 for it in uncached:
-                    _importance_cache.setdefault(it["link"], True)
-    return [it for it in items if _importance_cache.get(it["link"], True)]
+                    _importance_cache.setdefault(it["uuid"], True)
+    return [it for it in items if _importance_cache.get(it["uuid"], True)]
 
 
 # Per-currency queries for the Bias Check news panel -- verified by hand.
