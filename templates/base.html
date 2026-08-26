@@ -23,8 +23,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
       {% elif item.key == 'trades' %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h13M13 3l4 4-4 4"/><path d="M21 17H8m5 4l-4-4 4-4"/></svg>
-      {% elif item.key == 'pairs' %}
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4.5"/><circle cx="16" cy="12" r="4.5"/></svg>
       {% elif item.key == 'macros' %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/></svg>
       {% elif item.key == 'strategy' %}
@@ -45,7 +43,7 @@
       </div>
       <div class="controls">
         {% block header_controls %}{% endblock %}
-        <button class="btn-primary" id="addTradeBtn">+ Add trade</button>
+        {% block add_trade_btn %}{% endblock %}
       </div>
     </header>
 

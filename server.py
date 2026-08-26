@@ -161,7 +161,6 @@ def index():
 NAV_ITEMS = [
     {"key": "overview", "label": "Overview", "endpoint": "overview"},
     {"key": "trades", "label": "Trades", "endpoint": "trades_page"},
-    {"key": "pairs", "label": "Pairs", "endpoint": "pairs_page"},
     {"key": "macros", "label": "Macros", "endpoint": "macros_page"},
     {"key": "strategy", "label": "Strategy", "endpoint": "strategy_page"},
 ]
@@ -180,11 +179,6 @@ def overview():
 @app.get("/trades")
 def trades_page():
     return render_template("trades.html", active_page="trades")
-
-
-@app.get("/pairs")
-def pairs_page():
-    return render_template("pairs.html", active_page="pairs")
 
 
 @app.get("/macros")
