@@ -14,38 +14,55 @@ before passing it to render().
 """
 
 _STYLE = """
-  html,body{margin:0;height:100%;background:#0d0d0d;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-    display:flex;align-items:center;justify-content:center;}
+  html,body{margin:0;height:100%;background:#0d0d0d;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+  .auth-shell{display:flex;min-height:100vh;}
+  .auth-art{flex:1.7;position:relative;
+    background:linear-gradient(135deg,#14121f,#0d0d0d);border-right:1px solid rgba(255,255,255,0.08);}
+  .auth-brand{position:absolute;top:28px;left:32px;font-size:15px;font-weight:700;}
+  .auth-art-inner{position:absolute;bottom:64px;left:32px;right:32px;}
+  .auth-art-inner h2{font-size:26px;margin:0 0 8px;letter-spacing:0.5px;}
+  .auth-art-inner p{font-size:13.5px;color:#9a9a97;margin:0;}
+  .auth-form-col{flex:1;display:flex;align-items:center;justify-content:flex-end;padding:24px 64px;box-sizing:border-box;}
   .card{background:#1a1a19;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:32px 28px;width:300px;}
   h1{font-size:16px;margin:0 0 6px;}
   .sub{font-size:12.5px;color:#9a9a97;margin:0 0 16px;}
-  input{width:100%;background:#212120;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;
+  input,select{width:100%;background:#212120;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;
     padding:9px 10px;font-size:14px;box-sizing:border-box;margin-bottom:12px;}
-  button{width:100%;background:#3987e5;border:none;border-radius:8px;color:#fff;font-weight:650;padding:10px;
+  button{width:100%;background:#6d7cf0;border:none;border-radius:8px;color:#fff;font-weight:650;padding:10px;
     font-size:13.5px;cursor:pointer;}
   button.secondary{background:#2a2a28;}
   .error{color:#e66767;font-size:12.5px;margin-bottom:10px;}
   .info{color:#7ec4a3;font-size:12.5px;margin-bottom:10px;}
   .links{margin-top:14px;font-size:12.5px;text-align:center;}
-  .links a{color:#7aa8e0;text-decoration:none;}
+  .links a{color:#8f9cf5;text-decoration:none;}
   .links a:hover{text-decoration:underline;}
   form + form{margin-top:10px;}
+  @media (max-width:760px){.auth-art{display:none;} .auth-form-col{justify-content:center;padding:24px;}}
 """
 
 
 def render(title, body):
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — Felix Trade Journal</title>
+<title>{title} — SteadFast</title>
 <style>{_STYLE}</style></head><body>
-<div class="card">
+<div class="auth-shell">
+  <div class="auth-art">
+    <div class="auth-brand">SteadFast</div>
+    <div class="auth-art-inner">
+      <h2>SteadFast</h2>
+      <p>Discipline. Patience. Clarity.</p>
+    </div>
+  </div>
+  <div class="auth-form-col"><div class="card">
 {body}
+  </div></div>
 </div>
 </body></html>"""
 
 
 LOGIN_PAGE = """<form method="post">
-  <h1>Felix Trade Journal</h1>
+  <h1>SteadFast</h1>
   {error}
   <input type="text" name="username" placeholder="Username" autofocus autocapitalize="off">
   <input type="password" name="password" placeholder="Password">
@@ -61,11 +78,27 @@ SIGNUP_PAGE = """<form method="post">
   <input type="text" name="last_name" placeholder="Last name" value="{last_name}">
   <input type="text" name="username" placeholder="Username" value="{username}" autocapitalize="off">
   <input type="email" name="email" placeholder="Email" value="{email}" autocapitalize="off">
+  <select name="country" id="signupCountry">{country_options}</select>
+  <div id="signupAddressFields" style="display:none;">
+    <input type="text" name="address_line1" placeholder="Street address" value="{address_line1}">
+    <input type="text" name="address_city" placeholder="City" value="{address_city}">
+    <input type="text" name="address_postal_code" placeholder="Postal code" value="{address_postal_code}">
+  </div>
+  <input type="text" name="phone" placeholder="Phone number (optional)" value="{phone}">
   <input type="password" name="password" placeholder="Password">
   <input type="password" name="confirm_password" placeholder="Confirm password">
   <button type="submit">Sign Up</button>
 </form>
-<div class="links"><a href="/login">Already have an account? Log in</a></div>"""
+<div class="links"><a href="/login">Already have an account? Log in</a></div>
+<script>
+(function() {{
+  var sel = document.getElementById('signupCountry');
+  var addr = document.getElementById('signupAddressFields');
+  function sync() {{ addr.style.display = sel.value ? 'block' : 'none'; }}
+  sel.addEventListener('change', sync);
+  sync();
+}})();
+</script>"""
 
 
 VERIFY_EMAIL_PAGE = """<form method="post" action="/verify-email">

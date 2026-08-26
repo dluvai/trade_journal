@@ -130,6 +130,28 @@ def _migrate_user_profile_columns(conn):
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {coltype}")
 
 
+def _migrate_user_extended_profile_columns(conn):
+    # Country/address/phone (all optional, editable from the profile page)
+    # and avatar storage -- avatar bytes live directly on this row rather
+    # than a separate table since there's only ever one per user; served
+    # through its own route (see get_avatar), never embedded in
+    # public_user_dict()'s output.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)").rows}
+    additions = {
+        "country": "TEXT",
+        "address_line1": "TEXT",
+        "address_city": "TEXT",
+        "address_postal_code": "TEXT",
+        "phone": "TEXT",
+        "avatar_image": "BLOB",
+        "avatar_content_type": "TEXT",
+        "avatar_updated_at": "TEXT",
+    }
+    for col, coltype in additions.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {coltype}")
+
+
 _schema_ready = False
 _client = None
 
@@ -151,6 +173,7 @@ def _ensure_schema(conn):
     _migrate_trades_strategy_column(conn)
     _migrate_user_id_columns(conn)
     _migrate_user_profile_columns(conn)
+    _migrate_user_extended_profile_columns(conn)
     _schema_ready = True
 
 
@@ -387,7 +410,10 @@ def upsert_macro(currency, fields):
 # Fields safe to hand back to a browser -- everything else on the users row
 # (password_hash, every verification/reset code+expiry+attempts column) must
 # never reach a template context or jsonify() call.
-_PUBLIC_USER_FIELDS = ["id", "username", "first_name", "last_name", "email", "email_verified", "created_at"]
+_PUBLIC_USER_FIELDS = [
+    "id", "username", "first_name", "last_name", "email", "email_verified", "created_at",
+    "country", "address_line1", "address_city", "address_postal_code", "phone", "avatar_updated_at",
+]
 
 
 def public_user_dict(user):
@@ -412,15 +438,56 @@ def get_user_by_email(email):
     return rows[0].asdict() if rows else None
 
 
-def create_user(username, password_hash, first_name=None, last_name=None, email=None):
+def create_user(username, password_hash, first_name=None, last_name=None, email=None,
+                 country=None, address_line1=None, address_city=None, address_postal_code=None, phone=None):
     now = datetime.now().isoformat(timespec="seconds")
     conn = get_conn()
     rs = conn.execute(
-        "INSERT INTO users (username, password_hash, first_name, last_name, email, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (username, password_hash, first_name, last_name, email, now),
+        """INSERT INTO users (username, password_hash, first_name, last_name, email,
+                               country, address_line1, address_city, address_postal_code, phone, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (username, password_hash, first_name, last_name, email,
+         country, address_line1, address_city, address_postal_code, phone, now),
     )
     new_id = rs.last_insert_rowid
     return new_id
+
+
+def update_profile_fields(user_id, fields):
+    # fields: any subset of {country, address_line1, address_city, address_postal_code, phone}
+    cols = list(fields.keys())
+    if not cols:
+        return
+    set_clause = ",".join(f"{c}=?" for c in cols)
+    conn = get_conn()
+    conn.execute(f"UPDATE users SET {set_clause} WHERE id=?", [fields[c] for c in cols] + [user_id])
+
+
+def set_avatar(user_id, image_bytes, content_type):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET avatar_image=?, avatar_content_type=?, avatar_updated_at=? WHERE id=?",
+        (image_bytes, content_type, now, user_id),
+    )
+
+
+def clear_avatar(user_id):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET avatar_image=NULL, avatar_content_type=NULL, avatar_updated_at=NULL WHERE id=?",
+        (user_id,),
+    )
+
+
+def get_avatar(user_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT avatar_image, avatar_content_type, avatar_updated_at FROM users WHERE id=?", (user_id,)
+    ).rows
+    if not rows or rows[0]["avatar_image"] is None:
+        return None
+    return rows[0].asdict()
 
 
 def count_users():

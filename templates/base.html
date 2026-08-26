@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Felix Trade Journal{% endblock %}</title>
+<script>(function(){try{
+  var t=localStorage.getItem('sf-theme'); if(t) document.documentElement.setAttribute('data-theme',t);
+  var c=localStorage.getItem('sf-contrast'); if(c) document.documentElement.setAttribute('data-contrast',c);
+}catch(e){}})();</script>
+<title>{% block title %}SteadFast{% endblock %}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,7 +18,7 @@
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-brand">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
-    <span>Felix Trade Journal</span>
+    <span>SteadFast</span>
   </div>
   <div class="sidebar-nav">
     {% for item in nav_items %}
@@ -64,7 +68,7 @@
 
     {% block content %}{% endblock %}
 
-    <footer>Felix Trade Journal</footer>
+    <footer>SteadFast</footer>
   </div>
 </div>
 

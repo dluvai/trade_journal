@@ -66,6 +66,62 @@
     --shadow:         0 1px 2px rgba(18,22,28,0.05), 0 10px 24px -16px rgba(18,22,28,0.16);
   }
 }
+/* Manual theme override (profile page toggle, persisted via localStorage) --
+   mirrors the prefers-color-scheme values above exactly, but as an
+   attribute selector so an explicit in-app choice can win over the OS
+   setting in either direction. "System" (no attribute) keeps the media
+   query behavior untouched. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface-1:      #ffffff;
+  --surface-2:      #fbf9f5;
+  --page:           #f5f3ef;
+  --text-primary:   #14181f;
+  --text-secondary: #545e68;
+  --text-muted:     #8b929b;
+  --grid:           rgba(18,22,28,0.11);
+  --baseline:       rgba(18,22,28,0.20);
+  --border:         rgba(18,22,28,0.11);
+  --border-strong:  rgba(18,22,28,0.20);
+  --series-1:       #4338ca;
+  --series-1-soft:  rgba(67,56,202,0.14);
+  --info:           #3574a5;
+  --good:           #1f9d5c;
+  --critical:       #cf3f3a;
+  --muted-fill:     #dcd7cd;
+  --warn:           #a9791a;
+  --shadow:         0 1px 2px rgba(18,22,28,0.05), 0 10px 24px -16px rgba(18,22,28,0.16);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1:      #12161d;
+  --surface-2:      #1a2029;
+  --page:           #0a0d12;
+  --text-primary:   #eef1f4;
+  --text-secondary: #99a3ad;
+  --text-muted:     #576270;
+  --grid:           rgba(238,241,244,0.09);
+  --baseline:       rgba(238,241,244,0.16);
+  --border:         rgba(238,241,244,0.09);
+  --border-strong:  rgba(238,241,244,0.16);
+  --series-1:       #6d7cf0;
+  --series-1-soft:  rgba(109,124,240,0.16);
+  --info:           #5b9bd1;
+  --good:           #45c988;
+  --critical:       #f0655f;
+  --muted-fill:     #3a4048;
+  --warn:           #e2b34a;
+  --shadow:         0 1px 0 rgba(238,241,244,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.65);
+}
+/* High-contrast: relative adjustments off whatever theme is already
+   active, same color-mix technique as --accent-gradient above -- avoids
+   needing separate light-high/dark-high palettes. */
+:root[data-contrast="high"] {
+  --border:         color-mix(in srgb, var(--text-primary) 32%, transparent);
+  --border-strong:  color-mix(in srgb, var(--text-primary) 48%, transparent);
+  --text-secondary: color-mix(in srgb, var(--text-primary) 80%, var(--text-secondary));
+  --text-muted:     color-mix(in srgb, var(--text-primary) 65%, var(--text-muted));
+}
 * { box-sizing: border-box; }
 *, *::before, *::after {
   transition: background-color .18s ease, border-color .18s ease, color .18s ease,
@@ -94,6 +150,19 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
   font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 5px; cursor: pointer;
 }
 .segmented button.active { background: var(--accent-gradient); color: #fff; }
+.date-range-select {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; color: var(--text-primary);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 7px 10px; cursor: pointer;
+}
+.date-range-custom { display: inline-flex; gap: 6px; margin-left: 8px; align-items: center; }
+.date-range-custom input[type="date"] {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; color: var(--text-primary);
+  font-family: var(--font-mono); font-size: 12px; padding: 6px 8px;
+}
+.date-range-apply {
+  border: 1px solid var(--series-1); background: var(--accent-gradient); color: #fff;
+  font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer;
+}
 .iconbtn {
   border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary);
   font-family: var(--font-ui); font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer;

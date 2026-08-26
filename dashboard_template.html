@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Felix Trade Journal Dashboard</title>
+<title>SteadFast Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,11 +13,11 @@
 <div class="wrap">
   <header>
     <div>
-      <h1>Felix Trade Journal Dashboard</h1>
+      <h1>SteadFast Dashboard</h1>
       <div class="sub" id="subhead"></div>
     </div>
     <div class="controls">
-      <div class="segmented" id="yearFilter"></div>
+      <div id="dateRangeFilter"></div>
       <button class="btn-primary" id="exportCsvBtn">Export CSV</button>
     </div>
   </header>
@@ -83,18 +83,19 @@
 <script src="dashboard-core.js"></script>
 <script>
 const DATA = /*__TRADE_DATA__*/;
-let currentYear = 'all';
+let dateRange = DC.ALL_TIME_RANGE;
 
 function render() {
-  DC.renderAll(DATA.trades, currentYear, {
-    onYearChange: (y) => { currentYear = y; render(); },
-    subheadText: (n) => `${n} trades total · generated ${DATA.meta.generated_at.replace('T', ' ')} from ${DATA.meta.source_file}`,
+  DC.renderAll(DATA.trades, dateRange, {
+    onRangeChange: (r) => { dateRange = r; render(); },
+    subheadText: (n) => `${n} trades total · generated ${DATA.meta.generated_at.replace('T', ' ')} for ${DATA.meta.source}`,
     footerText: 'Regenerate with: python build_dashboard.py · Prefer editing on the dashboard? Run server.py instead.',
   });
 }
 
 document.getElementById('exportCsvBtn').addEventListener('click', () => {
-  DC.exportCsv(DATA.trades, `trade_journal_export_${new Date().toISOString().slice(0, 10)}.csv`);
+  const filtered = DC.filterTradesByRange(DATA.trades, dateRange);
+  DC.exportCsv(filtered, `steadfast_export_${new Date().toISOString().slice(0, 10)}.csv`);
 });
 
 DC.setupTabs();

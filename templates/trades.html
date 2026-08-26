@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Trades — Felix Trade Journal{% endblock %}
-{% block header_controls %}<div class="segmented" id="yearFilter"></div>{% endblock %}
+{% block title %}Trades — SteadFast{% endblock %}
+{% block header_controls %}<div id="dateRangeFilter"></div>{% endblock %}
 {% block add_trade_btn %}<button class="btn-primary" id="addTradeBtn">+ Add Trade</button>{% endblock %}
 {% block content %}
 <div class="form-actions" style="margin-bottom:14px;">
   <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
+  <button class="iconbtn" id="importCsvBtn">Import</button>
 </div>
 <div id="bestWorstTrades"></div>
 <div class="panel">
@@ -17,10 +18,51 @@
 </div>
 <div id="calendarDetails"></div>
 {% endblock %}
+{% block modals %}
+<div class="modal-backdrop hidden" id="importModalBackdrop">
+  <div class="modal">
+    <h2>Import Trades</h2>
+
+    <div id="importStep1">
+      <div class="field" style="margin-bottom:12px;">
+        <label>CSV or XLSX file</label>
+        <input type="file" id="importFileInput" accept=".csv,.xlsx">
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label><input type="checkbox" id="importRiskPnlPercent" checked style="width:auto; margin-right:6px;">Risk/PnL values in this file are already percentages (e.g. 2.5 = 2.5%)</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="importNextBtn">Next</button>
+        <button type="button" class="iconbtn" id="importCancelBtn1">Cancel</button>
+        <span id="importStep1Error" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+    </div>
+
+    <div id="importStep2" class="hidden">
+      <div class="field" style="margin-bottom:12px;">
+        <label><input type="checkbox" id="importHasHeader" style="width:auto; margin-right:6px;">First row is a header</label>
+      </div>
+      <div class="table-scroll"><table id="importMappingTable" style="width:100%;"></table></div>
+      <div class="form-actions" style="margin-top:14px;">
+        <button type="button" class="btn-primary" id="importConfirmBtn">Import</button>
+        <button type="button" class="iconbtn" id="importCancelBtn2">Cancel</button>
+        <span id="importStep2Error" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+    </div>
+
+    <div id="importStep3" class="hidden">
+      <div id="importResultSummary"></div>
+      <div class="form-actions" style="margin-top:14px;">
+        <button type="button" class="btn-primary" id="importCloseBtn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
 {% block scripts %}
 <script>
 let ALL_TRADES = [];
-let currentYear = 'all';
+let dateRange = DC.ALL_TIME_RANGE;
 
 function onEditTrade(id) {
   const t = ALL_TRADES.find(x => x.id === id);
@@ -34,16 +76,106 @@ async function onDeleteTrade(id) {
 }
 
 function render() {
-  DC.renderAll(ALL_TRADES, currentYear, {
-    onYearChange: (y) => { currentYear = y; render(); },
+  DC.renderAll(ALL_TRADES, dateRange, {
+    onRangeChange: (r) => { dateRange = r; render(); },
     onEdit: onEditTrade,
     onDelete: onDeleteTrade,
   });
 }
 
 document.getElementById('exportCsvBtn').addEventListener('click', () => {
-  DC.exportCsv(ALL_TRADES, `trade_journal_export_${new Date().toISOString().slice(0, 10)}.csv`);
+  const filtered = DC.filterTradesByRange(ALL_TRADES, dateRange);
+  DC.exportCsv(filtered, `steadfast_export_${new Date().toISOString().slice(0, 10)}.csv`);
 });
+
+// ---------- CSV/XLSX import ----------
+(function() {
+  const backdrop = document.getElementById('importModalBackdrop');
+  const step1 = document.getElementById('importStep1');
+  const step2 = document.getElementById('importStep2');
+  const step3 = document.getElementById('importStep3');
+  const fileInput = document.getElementById('importFileInput');
+  const step1Error = document.getElementById('importStep1Error');
+  const step2Error = document.getElementById('importStep2Error');
+  const hasHeaderCheckbox = document.getElementById('importHasHeader');
+  const mappingTable = document.getElementById('importMappingTable');
+  let previewData = null; // {columns, sample_rows, suggested_mapping, target_fields}
+  let selectedFile = null;
+
+  function resetModal() {
+    step1.classList.remove('hidden'); step2.classList.add('hidden'); step3.classList.add('hidden');
+    fileInput.value = ''; step1Error.textContent = ''; step2Error.textContent = '';
+    selectedFile = null; previewData = null;
+  }
+
+  function openModal() { resetModal(); backdrop.classList.remove('hidden'); }
+  function closeModal() { backdrop.classList.add('hidden'); }
+
+  document.getElementById('importCsvBtn').addEventListener('click', openModal);
+  document.getElementById('importCancelBtn1').addEventListener('click', closeModal);
+  document.getElementById('importCancelBtn2').addEventListener('click', closeModal);
+  document.getElementById('importCloseBtn').addEventListener('click', () => { closeModal(); window.location.reload(); });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
+
+  function renderMappingTable() {
+    const rows = [`<tr><th>Column</th><th>Sample</th><th>Maps to</th></tr>`];
+    previewData.columns.forEach((col, i) => {
+      const sample = previewData.sample_rows.length > (hasHeaderCheckbox.checked ? 1 : 0)
+        ? previewData.sample_rows[hasHeaderCheckbox.checked ? 1 : 0][i] : '';
+      const suggested = previewData.suggested_mapping[String(i)] || 'ignore';
+      const options = previewData.target_fields.map(([val, label]) =>
+        `<option value="${val}" ${val === suggested ? 'selected' : ''}>${label}</option>`).join('');
+      rows.push(`<tr data-col="${i}"><td>${col}</td><td style="color:var(--text-muted);">${sample}</td>
+        <td><select class="import-col-map">${options}</select></td></tr>`);
+    });
+    mappingTable.innerHTML = rows.join('');
+  }
+
+  document.getElementById('importNextBtn').addEventListener('click', async () => {
+    if (!fileInput.files.length) { step1Error.textContent = 'Choose a file first.'; return; }
+    selectedFile = fileInput.files[0];
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    try {
+      const r = await fetch('/api/import/preview', { method: 'POST', body: fd });
+      const body = await r.json();
+      if (!r.ok) { step1Error.textContent = body.error || 'Could not read that file.'; return; }
+      previewData = body;
+      hasHeaderCheckbox.checked = body.has_header_guess;
+      renderMappingTable();
+      step1.classList.add('hidden'); step2.classList.remove('hidden');
+    } catch (e) {
+      step1Error.textContent = 'Upload failed: ' + e.message;
+    }
+  });
+
+  hasHeaderCheckbox.addEventListener('change', renderMappingTable);
+
+  document.getElementById('importConfirmBtn').addEventListener('click', async () => {
+    const mapping = {};
+    mappingTable.querySelectorAll('tr[data-col]').forEach(tr => {
+      mapping[tr.dataset.col] = tr.querySelector('.import-col-map').value;
+    });
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('mapping', JSON.stringify(mapping));
+    fd.append('has_header', hasHeaderCheckbox.checked ? 'true' : 'false');
+    fd.append('risk_pnl_is_percent', document.getElementById('importRiskPnlPercent').checked ? 'true' : 'false');
+    try {
+      const r = await fetch('/api/import/commit', { method: 'POST', body: fd });
+      const body = await r.json();
+      if (!r.ok) { step2Error.textContent = body.error || 'Import failed.'; return; }
+      document.getElementById('importResultSummary').innerHTML = `
+        <p><b>${body.inserted}</b> trade(s) imported successfully.</p>
+        ${body.failed ? `<p style="color:var(--critical);">${body.failed} row(s) failed:</p>
+          <div class="table-scroll" style="max-height:200px;"><ul>${body.errors.map(e => `<li>Row ${e.row}: ${e.error}</li>`).join('')}</ul></div>` : ''}
+      `;
+      step2.classList.add('hidden'); step3.classList.remove('hidden');
+    } catch (e) {
+      step2Error.textContent = 'Import failed: ' + e.message;
+    }
+  });
+})();
 
 (async function init() {
   ALL_TRADES = await DC.fetchTrades();

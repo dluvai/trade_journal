@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-echo Starting Felix Trade Journal server...
+echo Starting SteadFast server...
 echo.
 echo Once it says "Running on http://127.0.0.1:5151", open this in your browser:
 echo     http://felixjournal.local:5151

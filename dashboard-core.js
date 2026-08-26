@@ -717,15 +717,82 @@ const DC = (function () {
     URL.revokeObjectURL(url);
   }
 
-  // ---------- year filter, tabs, theme ----------
+  // ---------- date-range filter, tabs ----------
 
-  function renderYearFilter(hostId, allTrades, currentYear, onChange) {
+  const DATE_RANGE_PRESETS = [
+    ['all', 'All Time'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Past 7 Days'],
+    ['1m', '1 Month'], ['3m', '3 Months'], ['6m', '6 Months'], ['12m', '12 Months'], ['24m', '24 Months'],
+    ['custom', 'Custom'],
+  ];
+  const ALL_TIME_RANGE = { preset: 'all', start: '0000-01-01', end: '9999-12-31' };
+
+  function computeDateRangeBounds(preset, customStart, customEnd, todayStr) {
+    if (preset === 'all') return { start: '0000-01-01', end: '9999-12-31' };
+    if (preset === 'custom') return { start: customStart || '0000-01-01', end: customEnd || '9999-12-31' };
+    if (preset === 'today') return { start: todayStr, end: todayStr };
+    // Pure calendar-date arithmetic, anchored via Date.UTC and read back via
+    // toISOString -- never parses todayStr as local time. Mixing a local-time
+    // Date (e.g. `new Date(todayStr + 'T00:00:00')`) with a UTC-based
+    // toISOString() read-back silently shifts the result by a day whenever
+    // the browser's timezone offset isn't zero (confirmed by hand: broke
+    // "Yesterday" specifically, since "Today" bypasses this math entirely).
+    const [y, m, d] = todayStr.split('-').map(Number);
+    const DAY_MS = 86400000;
+    const todayUTC = Date.UTC(y, m - 1, d);
+    const fmt = (ms) => new Date(ms).toISOString().slice(0, 10);
+    if (preset === 'yesterday') {
+      const day = fmt(todayUTC - DAY_MS);
+      return { start: day, end: day };
+    }
+    // Fixed day-counts rather than calendar-month arithmetic (setMonth),
+    // to sidestep month-length/leap-year edge cases -- "1 Month" is 30
+    // days back, not "the same day last calendar month".
+    const daysBack = { '7d': 6, '1m': 30, '3m': 90, '6m': 182, '12m': 365, '24m': 730 }[preset];
+    return { start: fmt(todayUTC - daysBack * DAY_MS), end: todayStr };
+  }
+
+  function filterTradesByRange(allTrades, range) {
+    return allTrades.filter(t => t.date >= range.start && t.date <= range.end);
+  }
+
+  function localTodayStr() {
+    // Local calendar date, not UTC -- toISOString() reflects UTC, which can
+    // land on a different calendar day than the trader's own "today"
+    // depending on timezone and time of day.
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function renderDateRangeFilter(hostId, currentRange, onChange) {
     const el = document.getElementById(hostId);
     if (!el) return;
-    const years = [...new Set(allTrades.map(t => t.year).filter(Boolean))].sort();
-    const options = ['all', ...years];
-    el.innerHTML = options.map(y => `<button data-y="${y}" class="${y === currentYear ? 'active' : ''}">${y === 'all' ? 'All years' : y}</button>`).join('');
-    el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => onChange(b.dataset.y === 'all' ? 'all' : Number(b.dataset.y))));
+    const todayStr = localTodayStr();
+    el.innerHTML = `
+      <select class="date-range-select">
+        ${DATE_RANGE_PRESETS.map(([v, label]) => `<option value="${v}" ${v === currentRange.preset ? 'selected' : ''}>${label}</option>`).join('')}
+      </select>
+      <span class="date-range-custom" style="${currentRange.preset === 'custom' ? '' : 'display:none;'}">
+        <input type="date" class="date-range-start" value="${currentRange.preset === 'custom' ? currentRange.start : ''}">
+        <input type="date" class="date-range-end" value="${currentRange.preset === 'custom' ? currentRange.end : ''}">
+        <button type="button" class="date-range-apply">Apply</button>
+      </span>`;
+    const select = el.querySelector('.date-range-select');
+    const customEl = el.querySelector('.date-range-custom');
+    const startEl = el.querySelector('.date-range-start');
+    const endEl = el.querySelector('.date-range-end');
+    select.addEventListener('change', () => {
+      if (select.value === 'custom') {
+        customEl.style.display = '';
+        return; // wait for Apply -- picking "Custom" alone has no start/end yet
+      }
+      customEl.style.display = 'none';
+      const bounds = computeDateRangeBounds(select.value, null, null, todayStr);
+      onChange({ preset: select.value, start: bounds.start, end: bounds.end });
+    });
+    el.querySelector('.date-range-apply').addEventListener('click', () => {
+      if (!startEl.value || !endEl.value) return;
+      onChange({ preset: 'custom', start: startEl.value, end: endEl.value });
+    });
   }
 
   function setupTabs() {
@@ -739,15 +806,16 @@ const DC = (function () {
 
   // ---------- orchestration ----------
 
-  function renderAll(allTrades, currentYear, opts) {
+  function renderAll(allTrades, dateRange, opts) {
     opts = opts || {};
-    const trades = currentYear === 'all' ? allTrades : allTrades.filter(t => t.year === currentYear);
+    dateRange = dateRange || ALL_TIME_RANGE;
+    const trades = filterTradesByRange(allTrades, dateRange);
     const stats = computeStats(trades);
     const bw = computeBestWorst(trades);
     const equity = computeEquity(trades);
     const drawdown = computeDrawdown(equity);
 
-    renderYearFilter('yearFilter', allTrades, currentYear, opts.onYearChange);
+    renderDateRangeFilter('dateRangeFilter', dateRange, opts.onRangeChange);
     renderTiles('tiles', stats, drawdown);
     renderEquity('equityChart', equity, drawdown);
     renderDonut('donutChart', stats);
@@ -972,10 +1040,33 @@ const DC = (function () {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   }
 
+  // ---------- theme / contrast (client-only, localStorage) ----------
+  // The first persisted UI preference in this app -- deliberately kept to
+  // localStorage only, not synced to the DB or across devices, since this
+  // is a per-browser cosmetic choice, not account data.
+  function applyTheme(theme) {
+    theme ? document.documentElement.setAttribute('data-theme', theme) : document.documentElement.removeAttribute('data-theme');
+  }
+  function applyContrast(level) {
+    level === 'high' ? document.documentElement.setAttribute('data-contrast', 'high') : document.documentElement.removeAttribute('data-contrast');
+  }
+  function setTheme(theme) {
+    theme ? localStorage.setItem('sf-theme', theme) : localStorage.removeItem('sf-theme');
+    applyTheme(theme);
+  }
+  function setContrast(level) {
+    level === 'high' ? localStorage.setItem('sf-contrast', 'high') : localStorage.removeItem('sf-contrast');
+    applyContrast(level);
+  }
+  function getStoredTheme() { return localStorage.getItem('sf-theme'); }
+  function getStoredContrast() { return localStorage.getItem('sf-contrast'); }
+
   return {
     fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
     apiSend, fetchTrades, fetchStrategies, deleteTrade,
     initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initMobileSidebar,
+    setTheme, setContrast, getStoredTheme, getStoredContrast,
+    computeDateRangeBounds, filterTradesByRange, renderDateRangeFilter, ALL_TIME_RANGE, DATE_RANGE_PRESETS,
   };
 })();

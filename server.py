@@ -31,13 +31,16 @@ Local secrets, without retyping them every session:
     this is purely a local convenience, not a replacement for how Render
     (or any real deployment) is configured.
 """
+import io
+import json
 import os
 import re
 import secrets
 from functools import wraps
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from PIL import Image
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import ai_bias
@@ -46,12 +49,14 @@ import auth_pages
 import auto_sync
 import backup
 import calendar_view
+import countries
 import db
 import debt_model
 import email_sender
 import fred_calendar
 import fred_sync
 import fundamentals
+import import_trades
 import market_data
 import rate_calendar
 
@@ -92,6 +97,7 @@ PUBLIC_ENDPOINTS = {
 }
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PHONE_RE = re.compile(r"^[0-9+\-\s()]{6,20}$")
 
 
 @app.before_request
@@ -129,17 +135,31 @@ def _mask_email(email):
     return f"{visible}{'*' * max(1, len(name) - len(visible))}@{domain}"
 
 
+REQUIRED_SIGNUP_FIELDS = ["first_name", "last_name", "username", "email"]
+OPTIONAL_SIGNUP_FIELDS = ["country", "address_line1", "address_city", "address_postal_code", "phone"]
+
+
+def _validate_profile_fields(fields):
+    # Shared by signup and the profile page's "edit account" form -- both
+    # only ever set these when non-empty, so empty stays valid (optional).
+    if fields.get("country") and fields["country"] not in countries.COUNTRY_CODES:
+        return "Unknown country."
+    if fields.get("phone") and not PHONE_RE.match(fields["phone"]):
+        return "Enter a valid phone number."
+    return None
+
+
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
-    fields = {"first_name": "", "last_name": "", "username": "", "email": ""}
+    fields = {k: "" for k in REQUIRED_SIGNUP_FIELDS + OPTIONAL_SIGNUP_FIELDS}
     error = ""
     if request.method == "POST":
         fields = {k: (request.form.get(k) or "").strip() for k in fields}
         password = request.form.get("password") or ""
         confirm_password = request.form.get("confirm_password") or ""
 
-        if not all(fields.values()) or not password or not confirm_password:
-            error = "All fields are required."
+        if not all(fields[k] for k in REQUIRED_SIGNUP_FIELDS) or not password or not confirm_password:
+            error = "First name, last name, username, email, and password are required."
         elif not EMAIL_RE.match(fields["email"]):
             error = "Enter a valid email address."
         elif password != confirm_password:
@@ -150,11 +170,16 @@ def signup():
             error = "That username is already taken."
         elif db.get_user_by_email(fields["email"]):
             error = "That email is already registered."
+        else:
+            error = _validate_profile_fields(fields)
 
         if not error:
             user_id = db.create_user(
                 fields["username"], generate_password_hash(password),
                 fields["first_name"], fields["last_name"], fields["email"],
+                fields["country"] or None, fields["address_line1"] or None,
+                fields["address_city"] or None, fields["address_postal_code"] or None,
+                fields["phone"] or None,
             )
             code = auth.generate_code()
             db.set_verification_code(user_id, auth.hash_code(code), auth.expiry_timestamp())
@@ -163,7 +188,8 @@ def signup():
             return redirect(url_for("verify_email"))
 
     body = auth_pages.SIGNUP_PAGE.format(
-        error=f'<div class="error">{error}</div>' if error else "", **fields,
+        error=f'<div class="error">{error}</div>' if error else "",
+        country_options=countries.options_html(fields["country"]), **fields,
     )
     return auth_pages.render("Sign Up", body)
 
@@ -283,8 +309,93 @@ def reset_password():
     return auth_pages.render("Reset Password", body)
 
 
-@app.route("/profile", methods=["GET", "POST"])
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
+AVATAR_MAX_DIMENSION = (3840, 2160)
+AVATAR_STORE_DIMENSION = (512, 512)
+
+
+def _render_profile(**messages):
+    user = db.get_user_by_id(session["user_id"])
+    return render_template(
+        "profile.html", active_page="profile", user=db.public_user_dict(user),
+        country_options=countries.options_html(user["country"] or ""),
+        country_name=countries.country_name(user["country"]) if user["country"] else None,
+        country_flag=countries.flag_emoji(user["country"]) if user["country"] else "",
+        **messages,
+    )
+
+
+@app.get("/profile")
 def profile():
+    return _render_profile(account_error="", account_success="", avatar_error="")
+
+
+@app.post("/profile/account")
+def profile_account():
+    user_id = session["user_id"]
+    fields = {k: (request.form.get(k) or "").strip() or None for k in
+              ("country", "address_line1", "address_city", "address_postal_code", "phone")}
+    error = _validate_profile_fields({k: v or "" for k, v in fields.items()})
+    if error:
+        return _render_profile(account_error=error, account_success="", avatar_error="")
+    db.update_profile_fields(user_id, fields)
+    return _render_profile(account_error="", account_success="Account updated.", avatar_error="")
+
+
+@app.post("/profile/avatar")
+def profile_avatar():
+    user_id = session["user_id"]
+    file = request.files.get("avatar")
+    if not file or not file.filename:
+        return _render_profile(account_error="", account_success="", avatar_error="Choose an image file.")
+    data = file.read()
+    if len(data) > AVATAR_MAX_BYTES:
+        return _render_profile(account_error="", account_success="", avatar_error="Image must be 5MB or smaller.")
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.verify()
+        img = Image.open(io.BytesIO(data))  # verify() invalidates the object -- reopen to actually use it
+    except Exception:
+        return _render_profile(account_error="", account_success="", avatar_error="That doesn't look like a valid image.")
+
+    if img.width > AVATAR_MAX_DIMENSION[0] or img.height > AVATAR_MAX_DIMENSION[1]:
+        img.thumbnail(AVATAR_MAX_DIMENSION, Image.LANCZOS)
+    img.thumbnail(AVATAR_STORE_DIMENSION, Image.LANCZOS)
+
+    # Re-encode as JPEG rather than storing the raw upload -- strips EXIF and
+    # any non-image payload smuggled into the file, and normalizes format
+    # regardless of what was uploaded (PNG, WEBP, etc).
+    if img.mode in ("RGBA", "LA", "P"):
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        background.paste(img.convert("RGBA"), mask=img.convert("RGBA").split()[-1])
+        img = background
+    else:
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    db.set_avatar(user_id, buf.getvalue(), "image/jpeg")
+    return _render_profile(account_error="", account_success="", avatar_error="")
+
+
+@app.post("/profile/avatar/delete")
+def profile_avatar_delete():
+    db.clear_avatar(session["user_id"])
+    return _render_profile(account_error="", account_success="", avatar_error="")
+
+
+@app.get("/avatar/<int:user_id>")
+def avatar(user_id):
+    avatar_row = db.get_avatar(user_id)
+    if not avatar_row:
+        return jsonify({"error": "not found"}), 404
+    resp = Response(avatar_row["avatar_image"], mimetype=avatar_row["avatar_content_type"])
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
+
+
+@app.route("/profile/change-password", methods=["GET", "POST"])
+def profile_change_password():
     user = db.get_user_by_id(session["user_id"])
     error = ""
     success = ""
@@ -302,10 +413,7 @@ def profile():
             db.update_password(user["id"], generate_password_hash(new_password))
             success = "Password updated."
 
-    return render_template(
-        "profile.html", active_page="profile", user=db.public_user_dict(user),
-        error=error, success=success,
-    )
+    return render_template("change_password.html", active_page="profile", error=error, success=success)
 
 # Only these shared assets are servable as static files -- deliberately not the
 # whole folder, since that also holds trades.db and the source scripts.
@@ -405,6 +513,76 @@ def api_update(trade_id):
 def api_delete(trade_id):
     db.delete_trade(session["user_id"], trade_id)
     return jsonify({"ok": True})
+
+
+IMPORT_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _parse_import_sample(filename, data):
+    if filename.lower().endswith(".xlsx"):
+        return import_trades.parse_xlsx_sample(data)
+    return import_trades.parse_csv_sample(data)
+
+
+def _parse_import_full(filename, data):
+    if filename.lower().endswith(".xlsx"):
+        return import_trades.parse_full_xlsx(data)
+    return import_trades.parse_full_csv(data)
+
+
+@app.post("/api/import/preview")
+def api_import_preview():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "Choose a CSV or XLSX file."}), 400
+    data = file.read()
+    if len(data) > IMPORT_MAX_BYTES:
+        return jsonify({"error": "File must be 20MB or smaller."}), 400
+    try:
+        result = _parse_import_sample(file.filename, data)
+    except Exception as e:
+        return jsonify({"error": f"Couldn't read that file: {e}"}), 400
+    result["target_fields"] = import_trades.TARGET_FIELDS
+    return jsonify(result)
+
+
+@app.post("/api/import/commit")
+def api_import_commit():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "Choose a CSV or XLSX file."}), 400
+    data = file.read()
+    if len(data) > IMPORT_MAX_BYTES:
+        return jsonify({"error": "File must be 20MB or smaller."}), 400
+
+    try:
+        mapping = json.loads(request.form.get("mapping", "{}"))
+    except json.JSONDecodeError:
+        return jsonify({"error": "Invalid mapping."}), 400
+    has_header = request.form.get("has_header") == "true"
+    risk_pnl_is_percent = request.form.get("risk_pnl_is_percent") == "true"
+
+    try:
+        rows = _parse_import_full(file.filename, data)
+    except Exception as e:
+        return jsonify({"error": f"Couldn't read that file: {e}"}), 400
+    if has_header:
+        rows = rows[1:]
+
+    ok, failed, errors = 0, 0, []
+    for i, row in enumerate(rows):
+        if not any(str(c).strip() for c in row):
+            continue  # skip blank rows
+        try:
+            raw_fields = import_trades.row_to_trade_fields(row, mapping, risk_pnl_is_percent)
+            fields = clean_payload(raw_fields)
+            db.insert_trade(session["user_id"], fields)
+            ok += 1
+        except (ValueError, KeyError, TypeError) as e:
+            failed += 1
+            errors.append({"row": i + 1, "error": str(e)})
+
+    return jsonify({"inserted": ok, "failed": failed, "errors": errors[:50]})
 
 
 @app.get("/api/settings/<key>")

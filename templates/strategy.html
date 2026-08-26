@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Strategy — Felix Trade Journal{% endblock %}
+{% block title %}Strategy — SteadFast{% endblock %}
+{% block header_controls %}<div id="dateRangeFilter"></div>{% endblock %}
 {% block content %}
 <div class="panel">
   <h2>Performance by Strategy</h2>
@@ -38,12 +39,14 @@
 <script>
 let ALL_TRADES = [];
 let ALL_STRATEGIES = [];
+let dateRange = DC.ALL_TIME_RANGE;
 
 // Reuses the exact same grouping/rendering the Pairs page uses for
 // performance-by-pair -- a strategy tag on a trade is just another grouping
 // key, same as pair/day/session already are.
 function renderStrategyPerformance() {
-  const groups = DC.computeGroupStats(ALL_TRADES, 'strategy_name');
+  const filtered = DC.filterTradesByRange(ALL_TRADES, dateRange);
+  const groups = DC.computeGroupStats(filtered, 'strategy_name');
   const shaped = groups.map(g => ({ pair: g.key, total: g.total, wins: g.wins, pnl: g.pnl }));
   DC.renderPairTable('strategyPerformance', shaped, 'Strategy');
 }
@@ -98,6 +101,8 @@ strategyForm.addEventListener('submit', async (e) => {
     strategyFormError.textContent = err.message;
   }
 });
+
+DC.renderDateRangeFilter('dateRangeFilter', dateRange, (r) => { dateRange = r; renderStrategyPerformance(); });
 
 (async function init() {
   ALL_TRADES = await DC.fetchTrades();

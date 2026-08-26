@@ -63,8 +63,8 @@ def _code_email_html(heading, code):
 
 
 def send_verification_code(to, code):
-    return send_email(to, "Verify your email — Felix Trade Journal", _code_email_html("Verify your email", code))
+    return send_email(to, "Verify your email — SteadFast", _code_email_html("Verify your email", code))
 
 
 def send_reset_code(to, code):
-    return send_email(to, "Reset your password — Felix Trade Journal", _code_email_html("Your password reset code", code))
+    return send_email(to, "Reset your password — SteadFast", _code_email_html("Your password reset code", code))
