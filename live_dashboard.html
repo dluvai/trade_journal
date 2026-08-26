@@ -86,6 +86,10 @@
 
   <div class="tab-panel" id="tab-strategy">
     <div class="panel">
+      <h2>Performance by strategy</h2>
+      <div id="strategyPerformance"></div>
+    </div>
+    <div class="panel">
       <div class="form-actions" style="margin-bottom:16px;">
         <button class="btn-primary" id="createStrategyBtn">+ Create Strategy</button>
       </div>
@@ -164,6 +168,13 @@
             <option value="WIN">WIN</option>
             <option value="LOSS">LOSS</option>
             <option value="BE">BE</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid" style="grid-template-columns: 1fr;">
+        <div class="field"><label>Strategy</label>
+          <select name="strategy_id" id="tradeStrategySelect">
+            <option value="">No strategy</option>
           </select>
         </div>
       </div>
@@ -249,6 +260,7 @@ function render() {
 async function refreshAndRender() {
   ALL_TRADES = await apiList();
   render();
+  renderStrategyPerformance();
 }
 
 // ---------- add/edit modal ----------
@@ -280,6 +292,7 @@ function openEdit(id) {
   tradeForm.rr.value = t.rr;
   tradeForm.pnl.value = (t.pnl * 100).toFixed(2);
   tradeForm.result.value = t.result || '';
+  tradeForm.strategy_id.value = t.strategy_id != null ? t.strategy_id : '';
   tradeForm.notes.value = t.notes || '';
   tradeForm.chart_daily.value = (t.charts.find(c => c.label === 'Daily') || {}).link || '';
   tradeForm.chart_4h.value = (t.charts.find(c => c.label === '4H') || {}).link || '';
@@ -312,6 +325,7 @@ tradeForm.addEventListener('submit', async (e) => {
     rr: num(fd.get('rr')) || 0,
     pnl: num(fd.get('pnl')) != null ? num(fd.get('pnl')) / 100 : 0,
     result: fd.get('result') || null,
+    strategy_id: fd.get('strategy_id') || null,
     notes: fd.get('notes'),
     chart_daily: fd.get('chart_daily') || null,
     chart_4h: fd.get('chart_4h') || null,
@@ -348,9 +362,31 @@ function flashSaved(id) {
   setTimeout(() => el.classList.remove('show'), 1800);
 }
 
+let ALL_STRATEGIES = [];
+
 async function loadStrategies() {
-  const list = await (await fetch('/api/strategies')).json();
-  renderStrategiesList(list);
+  ALL_STRATEGIES = await (await fetch('/api/strategies')).json();
+  renderStrategiesList(ALL_STRATEGIES);
+  populateStrategySelect();
+  renderStrategyPerformance();
+}
+
+// Reuses the exact same grouping/rendering the Pairs tab uses for
+// performance-by-pair -- a strategy tag on a trade is just another grouping
+// key, same as pair/day/session already are, so there's no new computation
+// to write here, just a new key to group by.
+function renderStrategyPerformance() {
+  const groups = DC.computeGroupStats(ALL_TRADES, 'strategy_name');
+  const shaped = groups.map(g => ({ pair: g.key, total: g.total, wins: g.wins, pnl: g.pnl }));
+  DC.renderPairTable('strategyPerformance', shaped, 'Strategy');
+}
+
+function populateStrategySelect() {
+  const select = document.getElementById('tradeStrategySelect');
+  const current = select.value;
+  select.innerHTML = '<option value="">No strategy</option>' +
+    ALL_STRATEGIES.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  select.value = current; // preserve selection if this runs while the form is open
 }
 
 function renderStrategiesList(list) {

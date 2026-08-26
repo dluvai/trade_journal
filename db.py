@@ -74,6 +74,19 @@ def _migrate_macro_prev_columns(conn):
     conn.commit()
 
 
+def _migrate_trades_strategy_column(conn):
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)")}
+    if "strategy_id" not in existing:
+        # Nullable and no FOREIGN KEY constraint on purpose: SQLite only
+        # enforces foreign keys when PRAGMA foreign_keys=ON is set per
+        # connection (easy to forget elsewhere in the codebase and get
+        # silently-unenforced constraints), and a trade logged before this
+        # column existed -- or one that's just discretionary, no formal
+        # setup -- has no strategy to point at. NULL means exactly that.
+        conn.execute("ALTER TABLE trades ADD COLUMN strategy_id INTEGER")
+    conn.commit()
+
+
 def get_conn():
     # If DB_PATH points at a directory that doesn't exist yet (e.g. a Render
     # disk mount path set before the disk was actually attached), create it
@@ -83,6 +96,7 @@ def get_conn():
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     _migrate_macro_prev_columns(conn)
+    _migrate_trades_strategy_column(conn)
     return conn
 
 
@@ -109,6 +123,7 @@ def row_to_dict(row):
         if link:
             charts.append({"label": label, "link": link, "img": snapshot_image_url(link)})
     d["charts"] = charts
+    d["strategy_name"] = d.get("strategy_name") or "No strategy"
     return d
 
 
@@ -125,9 +140,18 @@ def snapshot_image_url(tv_link):
 
 def list_trades():
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM trades ORDER BY date ASC, id ASC").fetchall()
+    rows = conn.execute("""
+        SELECT trades.*, strategies.name AS strategy_name
+        FROM trades LEFT JOIN strategies ON strategies.id = trades.strategy_id
+        ORDER BY trades.date ASC, trades.id ASC
+    """).fetchall()
     conn.close()
     return [row_to_dict(r) for r in rows]
+
+
+def _strategy_id_or_none(fields):
+    raw = fields.get("strategy_id")
+    return int(raw) if raw not in (None, "") else None
 
 
 def insert_trade(fields):
@@ -137,14 +161,14 @@ def insert_trade(fields):
     conn = get_conn()
     cur = conn.execute(
         """INSERT INTO trades (date, session, pair, direction, risk, rr, pnl, result, notes,
-                                chart_daily, chart_4h, chart_30m, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                chart_daily, chart_4h, chart_30m, strategy_id, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            now, now,
+            _strategy_id_or_none(fields), now, now,
         ),
     )
     conn.commit()
@@ -160,13 +184,13 @@ def update_trade(trade_id, fields):
     conn = get_conn()
     conn.execute(
         """UPDATE trades SET date=?, session=?, pair=?, direction=?, risk=?, rr=?, pnl=?, result=?,
-               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, updated_at=? WHERE id=?""",
+               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, strategy_id=?, updated_at=? WHERE id=?""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            now, trade_id,
+            _strategy_id_or_none(fields), now, trade_id,
         ),
     )
     conn.commit()

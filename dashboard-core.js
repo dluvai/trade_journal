@@ -486,7 +486,7 @@ const DC = (function () {
 
   // ---------- pair table ----------
 
-  function renderPairTable(hostId, pairs) {
+  function renderPairTable(hostId, pairs, labelHeader) {
     const host = document.getElementById(hostId);
     if (!pairs.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const rows = pairs.map(p => {
@@ -499,7 +499,7 @@ const DC = (function () {
       </tr>`;
     }).join('');
     host.innerHTML = `<table>
-      <thead><tr><th>Pair</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Return</th></tr></thead>
+      <thead><tr><th>${labelHeader || 'Pair'}</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Return</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   }
@@ -753,7 +753,7 @@ const DC = (function () {
   }
 
   return {
-    fmtPct, computeStats, computeEquity, computeGroupStats, computeByPair, computeBestWorst,
-    renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER,
+    fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
+    renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
   };
 })();
