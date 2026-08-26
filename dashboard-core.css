@@ -363,8 +363,6 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 /* macro workspace -- currency switcher + single-currency detail view */
 .workspace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .workspace-head h2 { margin: 0; }
-.ccy-switcher.segmented { margin-bottom: 18px; }
-.ccy-switcher.segmented button { font-family: var(--font-mono); min-width: 44px; }
 
 .metric-category-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px;

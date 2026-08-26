@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Macros — Felix Trade Journal{% endblock %}
 {% block content %}
+<div class="panel" style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+  <h2 style="margin:0;">Currency</h2>
+  <select id="ccySwitcher" class="macro-input" style="width:auto; font-family:var(--font-mono); font-size:14px; padding:7px 12px;"></select>
+  <span style="color:var(--text-muted); font-size:11.5px;">Shows this currency's macro details below and automatically compares it against USD.</span>
+</div>
 <div class="panel" id="debtPanel" style="display:none;">
   <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
   <div id="debtContent"></div>
@@ -28,7 +33,6 @@
       <span id="fredSyncStatus" style="color:var(--text-muted); font-size:12px;"></span>
     </div>
   </div>
-  <div class="ccy-switcher segmented" id="ccySwitcher"></div>
   <div id="macroWorkspace"></div>
 </div>
 <div class="panel">
@@ -205,19 +209,35 @@ function computeGoldBias(usdRow) {
   return { bias, realYield };
 }
 
+// The dropdown both drives the workspace below it AND auto-runs the
+// fundamental bias check against USD (or, if USD itself is selected,
+// against EUR -- the single most-quoted pair globally, so there's always
+// something to show rather than a dead state) -- one control doing what
+// used to take picking a currency AND separately typing+submitting a pair.
+function autoPairFor(ccy) {
+  const other = ccy === 'USD' ? 'EUR' : 'USD';
+  const [base, quote] = orderPair(ccy, other);
+  return base + quote;
+}
+
+function onCcyChange() {
+  renderMacroWorkspace(LATEST_MACRO_ROWS);
+  document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
+  loadCcyNews();
+  document.getElementById('biasPair').value = autoPairFor(selectedCcy);
+  loadFundamentals();
+}
+
 function renderCcySwitcher() {
-  document.getElementById('ccySwitcher').innerHTML = CCY_ORDER.map(c =>
-    `<button data-ccy="${c}" class="${c === selectedCcy ? 'active' : ''}">${c}</button>`
-  ).join('');
-  document.querySelectorAll('#ccySwitcher button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      selectedCcy = btn.dataset.ccy;
-      renderCcySwitcher();
-      renderMacroWorkspace(LATEST_MACRO_ROWS);
-      document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
-      loadCcyNews();
+  const sel = document.getElementById('ccySwitcher');
+  if (!sel.options.length) {
+    sel.innerHTML = CCY_ORDER.map(c => `<option value="${c}">${c}</option>`).join('');
+    sel.addEventListener('change', () => {
+      selectedCcy = sel.value;
+      onCcyChange();
     });
-  });
+  }
+  sel.value = selectedCcy;
 }
 
 // USD-only debt-sustainability snapshot -- see debt_model.py for the formula.
@@ -461,6 +481,8 @@ async function loadCcyNews() {
   loadRateCalendar();
   loadDebtSnapshot();
   loadCcyNews();
+  document.getElementById('biasPair').value = autoPairFor(selectedCcy);
+  loadFundamentals();
   setInterval(loadCcyNews, 60000);
 })();
 </script>
