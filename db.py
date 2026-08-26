@@ -1,5 +1,6 @@
 """Shared Turso (libSQL) access for the live trade-entry dashboard."""
 import os
+import time
 from datetime import datetime
 
 import libsql_client
@@ -357,7 +358,21 @@ def delete_strategy(user_id, strategy_id):
 
 # ---------- macro snapshot (global, shared by every user) ----------
 
+# Same global data read by every user on every Macros-page load (often
+# several times per load -- fundamentals, the workspace, and the bias
+# table each call list_macro() independently) but changed only by an
+# explicit FRED sync or a manual edit -- worth a short in-process cache to
+# cut repeat Turso round-trips (~300ms each), invalidated on any write.
+_macro_cache = None
+_MACRO_CACHE_TTL_SECONDS = 30
+
+
 def list_macro():
+    global _macro_cache
+    if _macro_cache is not None:
+        cached_at, cached_result = _macro_cache
+        if time.time() - cached_at < _MACRO_CACHE_TTL_SECONDS:
+            return cached_result
     conn = get_conn()
     rows = {r["currency"]: r.asdict() for r in conn.execute("SELECT * FROM macro").rows}
     result = []
@@ -367,10 +382,13 @@ def list_macro():
             blank[key] = None
             blank[f"prev_{key}"] = None
         result.append(rows.get(c) or blank)
+    _macro_cache = (time.time(), result)
     return result
 
 
 def upsert_macro(currency, fields):
+    global _macro_cache
+    _macro_cache = None
     now = datetime.now().isoformat(timespec="seconds")
     conn = get_conn()
     existing_rows = conn.execute("SELECT * FROM macro WHERE currency=?", (currency,)).rows

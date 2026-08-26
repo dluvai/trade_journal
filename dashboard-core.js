@@ -915,7 +915,13 @@ const DC = (function () {
   function initTicker() {
     if (!document.getElementById('tickerStrip')) return;
     loadTicker();
-    setInterval(loadTicker, 3000);
+    // 15s, not 3s -- this app polls 10 external tickers on every tick
+    // (market_data.py fans them out in parallel, ~1-3s round trip each),
+    // so a 3s interval meant a fresh externally-bound fetch was almost
+    // always in flight, and its matching 3s server-side cache TTL never
+    // actually got a chance to serve a cached hit. 15s still feels live
+    // for a personal journal, not a scalping terminal.
+    setInterval(loadTicker, 15000);
   }
 
   // ---------- global add/edit trade modal (global chrome, present on every page) ----------

@@ -481,7 +481,13 @@ def strategy_page():
 def static_asset(filename):
     if filename not in STATIC_ASSETS:
         return jsonify({"error": "not found"}), 404
-    return send_from_directory(HERE, filename)
+    # 5 minutes, not longer -- these files change during active development
+    # and Render restarts the whole process on every deploy anyway, so
+    # there's no real cost to keeping this short. Still cuts every repeat
+    # page load's round-trip for these two files to zero within a session,
+    # instead of a conditional GET (send_from_directory's default) on every
+    # single load.
+    return send_from_directory(HERE, filename, max_age=300)
 
 
 @app.get("/api/trades")
@@ -728,4 +734,8 @@ if __name__ == "__main__":
     # A real deployment (Render, etc.) runs this via gunicorn instead, not this block.
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", 5151))
-    app.run(host=host, port=port, debug=False)
+    # threaded=True so one slow request (an external market-data/news call,
+    # a Turso round-trip) doesn't block every other request behind it --
+    # confirmed by hand that a single-threaded dev server made even static
+    # CSS/JS take 1-2s to load while a ticker poll was in flight.
+    app.run(host=host, port=port, debug=False, threaded=True)

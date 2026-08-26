@@ -94,7 +94,7 @@ def _fetch_quotes():
 
 
 def get_quotes():
-    return _cached("quotes", 3, _fetch_quotes)
+    return _cached("quotes", 15, _fetch_quotes)
 
 
 NEWS_MAX_AGE_SECONDS = 2 * 24 * 3600  # 2 days -- older than that isn't "latest news" anymore
