@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Felix Trade Journal Dashboard</title>
+<link rel="stylesheet" href="dashboard-core.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Felix Trade Journal Dashboard</h1>
+      <div class="sub" id="subhead"></div>
+    </div>
+    <div class="controls">
+      <div class="segmented" id="yearFilter"></div>
+      <button class="iconbtn" id="themeToggle">Light mode</button>
+      <button class="btn-primary" id="exportCsvBtn">Export CSV</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="trades">Trades</button>
+    <button class="tab-btn" data-tab="pairs">Pairs</button>
+  </div>
+
+  <div class="tab-panel active" id="tab-overview">
+    <div class="tiles" id="tiles"></div>
+    <div class="panel">
+      <h2>Equity curve</h2>
+      <div id="equityChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Win / Loss / Breakeven</h2>
+      <div id="donutChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Win rate by day of week</h2>
+      <div id="dayChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Win rate by session</h2>
+      <div id="sessionChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Monthly return</h2>
+      <div id="monthChart"></div>
+    </div>
+    <div class="panel">
+      <h2>RR distribution</h2>
+      <div id="rrHistogram"></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-pairs">
+    <div id="bestWorstPairs"></div>
+    <div class="panel">
+      <h2>Performance by pair</h2>
+      <div id="pairTable"></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-trades">
+    <div id="bestWorstTrades"></div>
+    <div class="panel">
+      <h2>Trade calendar</h2>
+      <div id="calendarGrid"></div>
+    </div>
+    <div id="calendarDetails"></div>
+    <div class="panel">
+      <h2>Trades</h2>
+      <div class="table-scroll"><div id="tradesTable"></div></div>
+    </div>
+  </div>
+
+  <footer id="footer"></footer>
+</div>
+
+<script src="dashboard-core.js"></script>
+<script>
+const DATA = /*__TRADE_DATA__*/;
+let currentYear = 'all';
+
+function render() {
+  DC.renderAll(DATA.trades, currentYear, {
+    onYearChange: (y) => { currentYear = y; render(); },
+    subheadText: (n) => `${n} trades total · generated ${DATA.meta.generated_at.replace('T', ' ')} from ${DATA.meta.source_file}`,
+    footerText: 'Regenerate with: python build_dashboard.py · Prefer editing on the dashboard? Run server.py instead.',
+  });
+}
+
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  DC.exportCsv(DATA.trades, `trade_journal_export_${new Date().toISOString().slice(0, 10)}.csv`);
+});
+
+DC.setupTabs();
+DC.setupThemeToggle('themeToggle');
+render();
+</script>
+</body>
+</html>

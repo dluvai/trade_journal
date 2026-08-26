@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Felix Trade Journal — Live</title>
+<link rel="stylesheet" href="dashboard-core.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Felix Trade Journal — Live</h1>
+      <div class="sub" id="subhead"></div>
+    </div>
+    <div class="controls">
+      <div class="segmented" id="yearFilter"></div>
+      <button class="iconbtn" id="themeToggle">Light mode</button>
+      <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
+      <button class="btn-primary" id="addTradeBtn">+ Add trade</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="trades">Trades</button>
+    <button class="tab-btn" data-tab="pairs">Pairs</button>
+    <button class="tab-btn" data-tab="bias">Bias Check</button>
+    <button class="tab-btn" data-tab="strategy">Strategy</button>
+  </div>
+
+  <div class="tab-panel active" id="tab-overview">
+    <div class="tiles" id="tiles"></div>
+    <div class="panel">
+      <h2>Equity curve</h2>
+      <div id="equityChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Win / Loss / Breakeven</h2>
+      <div id="donutChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Win rate by day of week</h2>
+      <div id="dayChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Win rate by session</h2>
+      <div id="sessionChart"></div>
+    </div>
+    <div class="panel">
+      <h2>Monthly return</h2>
+      <div id="monthChart"></div>
+    </div>
+    <div class="panel">
+      <h2>RR distribution</h2>
+      <div id="rrHistogram"></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-pairs">
+    <div id="bestWorstPairs"></div>
+    <div class="panel">
+      <h2>Performance by pair</h2>
+      <div id="pairTable"></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-trades">
+    <div id="bestWorstTrades"></div>
+    <div class="panel">
+      <h2>Trade calendar</h2>
+      <div id="calendarGrid"></div>
+    </div>
+    <div id="calendarDetails"></div>
+    <div class="panel">
+      <h2>Trades</h2>
+      <div class="table-scroll"><div id="tradesTable"></div></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-strategy">
+    <div class="panel">
+      <div class="form-actions" style="margin-bottom:16px;">
+        <button class="btn-primary" id="createStrategyBtn">+ Create Strategy</button>
+      </div>
+      <div id="strategiesList"></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-bias">
+    <div class="panel">
+      <h2>Fundamental bias check</h2>
+      <div class="form-grid" style="grid-template-columns: 1fr;">
+        <div class="field"><label>Pair</label><input type="text" id="biasPair" placeholder="EURUSD"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" id="checkFundamentalsBtn">Compare currencies</button>
+        <span id="biasError" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+      <div id="fundamentalsResult" style="margin-top:16px;"></div>
+    </div>
+    <div class="panel">
+      <h2>Macro snapshot</h2>
+      <div class="form-actions" style="margin-bottom:14px;">
+        <button class="btn-primary" id="saveMacroBtn">Save macro snapshot</button>
+        <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP, unemployment and CPI for USD/EUR/GBP/JPY from FRED. PMI and AUD/NZD/CHF stay manual.">
+          <span class="spin-icon" id="syncSpinIcon">⟳</span> Sync
+        </button>
+        <span id="macroSaved" class="save-flash"></span>
+        <span id="fredSyncStatus" style="color:var(--text-muted); font-size:12px;"></span>
+      </div>
+      <div id="macroCards" class="macro-cards-grid"></div>
+    </div>
+  </div>
+
+  <footer id="footer"></footer>
+</div>
+
+<div class="modal-backdrop hidden" id="modalBackdrop">
+  <div class="modal">
+    <h2 id="formTitle">Add trade</h2>
+    <form id="tradeForm">
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input type="date" name="date" required></div>
+        <div class="field"><label>Session</label>
+          <select name="session">
+            <option value="London">London</option>
+            <option value="New York">New York</option>
+            <option value="Asia">Asia</option>
+          </select>
+        </div>
+        <div class="field"><label>Pair</label><input type="text" name="pair" placeholder="EURUSD" required></div>
+        <div class="field"><label>Direction</label>
+          <select name="direction"><option value="Long">Long</option><option value="Short">Short</option></select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Risk %</label><input type="number" step="0.01" name="risk" placeholder="1.5"></div>
+        <div class="field"><label>RR</label><input type="number" step="0.01" name="rr" placeholder="2.0"></div>
+        <div class="field"><label>PnL %</label><input type="number" step="0.01" name="pnl" placeholder="3.0" required></div>
+        <div class="field"><label>Result</label>
+          <select name="result">
+            <option value="">Auto (from PnL)</option>
+            <option value="WIN">WIN</option>
+            <option value="LOSS">LOSS</option>
+            <option value="BE">BE</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Notes</label>
+        <textarea name="notes" rows="3" placeholder="What happened, why you took it, lessons..."></textarea>
+      </div>
+      <div class="form-grid thirds">
+        <div class="field"><label>Daily chart link</label><input type="url" name="chart_daily" placeholder="https://www.tradingview.com/x/..."></div>
+        <div class="field"><label>4H chart link</label><input type="url" name="chart_4h" placeholder="https://www.tradingview.com/x/..."></div>
+        <div class="field"><label>30M chart link</label><input type="url" name="chart_30m" placeholder="https://www.tradingview.com/x/..."></div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Save trade</button>
+        <button type="button" class="iconbtn" id="cancelForm">Cancel</button>
+        <span id="formError" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="strategyModalBackdrop">
+  <div class="modal">
+    <h2>Create strategy</h2>
+    <form id="strategyForm">
+      <div class="field" style="margin-bottom:12px;">
+        <label>Name</label>
+        <input type="text" name="name" placeholder="e.g. A-B0-B1-B2-C Liquidity Sweep" required>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>What you look for in the market</label>
+        <textarea name="description" rows="8" class="strategy-textarea" placeholder="Describe your setup: entry criteria, confirmation signals, risk rules, invalidation conditions..."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="iconbtn" id="cancelStrategyForm">Cancel</button>
+        <span id="strategyFormError" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="dashboard-core.js"></script>
+<script>
+let ALL_TRADES = [];
+let currentYear = 'all';
+let editingId = null;
+
+async function apiList() { const r = await fetch('/api/trades'); return r.json(); }
+async function apiSend(method, url, payload) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error || 'Request failed'); }
+  return r.json();
+}
+async function apiDelete(id) { await fetch(`/api/trades/${id}`, { method: 'DELETE' }); }
+
+function render() {
+  DC.renderAll(ALL_TRADES, currentYear, {
+    onYearChange: (y) => { currentYear = y; render(); },
+    onEdit: openEdit,
+    onDelete: onDelete,
+    subheadText: (n) => `${n} trades total · live from trades.db`,
+    footerText: 'Local server — nothing leaves this machine · http://localhost:5151',
+  });
+}
+
+async function refreshAndRender() {
+  ALL_TRADES = await apiList();
+  render();
+}
+
+// ---------- add/edit modal ----------
+
+const modalBackdrop = document.getElementById('modalBackdrop');
+const tradeForm = document.getElementById('tradeForm');
+const formError = document.getElementById('formError');
+
+function openAdd() {
+  editingId = null;
+  document.getElementById('formTitle').textContent = 'Add trade';
+  tradeForm.reset();
+  tradeForm.date.value = new Date().toISOString().slice(0, 10);
+  formError.textContent = '';
+  modalBackdrop.classList.remove('hidden');
+  tradeForm.pair.focus();
+}
+
+function openEdit(id) {
+  const t = ALL_TRADES.find(x => x.id === id);
+  if (!t) return;
+  editingId = id;
+  document.getElementById('formTitle').textContent = `Edit trade #${id} — ${t.date} ${t.pair || ''}`;
+  tradeForm.date.value = t.date;
+  tradeForm.session.value = t.session || 'London';
+  tradeForm.pair.value = t.pair || '';
+  tradeForm.direction.value = t.direction || 'Long';
+  tradeForm.risk.value = t.risk != null ? (t.risk * 100).toFixed(2) : '';
+  tradeForm.rr.value = t.rr;
+  tradeForm.pnl.value = (t.pnl * 100).toFixed(2);
+  tradeForm.result.value = t.result || '';
+  tradeForm.notes.value = t.notes || '';
+  tradeForm.chart_daily.value = (t.charts.find(c => c.label === 'Daily') || {}).link || '';
+  tradeForm.chart_4h.value = (t.charts.find(c => c.label === '4H') || {}).link || '';
+  tradeForm.chart_30m.value = (t.charts.find(c => c.label === '30M') || {}).link || '';
+  formError.textContent = '';
+  modalBackdrop.classList.remove('hidden');
+}
+
+function closeForm() {
+  modalBackdrop.classList.add('hidden');
+  editingId = null;
+  tradeForm.reset();
+}
+
+document.getElementById('addTradeBtn').addEventListener('click', openAdd);
+document.getElementById('cancelForm').addEventListener('click', closeForm);
+modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeForm(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalBackdrop.classList.contains('hidden')) closeForm(); });
+
+tradeForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(tradeForm);
+  const num = (v) => (v === '' || v == null) ? null : parseFloat(v);
+  const payload = {
+    date: fd.get('date'),
+    session: fd.get('session'),
+    pair: fd.get('pair'),
+    direction: fd.get('direction'),
+    risk: num(fd.get('risk')) != null ? num(fd.get('risk')) / 100 : null,
+    rr: num(fd.get('rr')) || 0,
+    pnl: num(fd.get('pnl')) != null ? num(fd.get('pnl')) / 100 : 0,
+    result: fd.get('result') || null,
+    notes: fd.get('notes'),
+    chart_daily: fd.get('chart_daily') || null,
+    chart_4h: fd.get('chart_4h') || null,
+    chart_30m: fd.get('chart_30m') || null,
+  };
+  try {
+    if (editingId) await apiSend('PUT', `/api/trades/${editingId}`, payload);
+    else await apiSend('POST', '/api/trades', payload);
+    closeForm();
+    await refreshAndRender();
+  } catch (err) {
+    formError.textContent = err.message;
+  }
+});
+
+async function onDelete(id) {
+  if (!confirm('Delete this trade? This cannot be undone.')) return;
+  await apiDelete(id);
+  await refreshAndRender();
+}
+
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  DC.exportCsv(ALL_TRADES, `trade_journal_export_${new Date().toISOString().slice(0, 10)}.csv`);
+});
+
+// ---------- strategy & macro snapshot ----------
+
+function flashSaved(id) {
+  const el = document.getElementById(id);
+  el.textContent = 'Saved.';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+async function loadStrategies() {
+  const list = await (await fetch('/api/strategies')).json();
+  renderStrategiesList(list);
+}
+
+function renderStrategiesList(list) {
+  const host = document.getElementById('strategiesList');
+  if (!list.length) { host.innerHTML = '<div class="empty">No strategies yet — click "+ Create Strategy" to add one.</div>'; return; }
+  host.innerHTML = [...list].reverse().map(s => `
+    <div class="panel" style="margin-bottom:12px;">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+        <h2 style="margin:0;">${s.name}</h2>
+        <button class="iconbtn small danger" data-delete-strategy="${s.id}">Delete</button>
+      </div>
+      <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.65; white-space:pre-wrap; margin-top:10px;">${s.description || '<em>No details written.</em>'}</div>
+    </div>`).join('');
+  host.querySelectorAll('[data-delete-strategy]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this strategy?')) return;
+      await apiSend('DELETE', `/api/strategies/${btn.dataset.deleteStrategy}`, {});
+      loadStrategies();
+    });
+  });
+}
+
+const strategyModalBackdrop = document.getElementById('strategyModalBackdrop');
+const strategyForm = document.getElementById('strategyForm');
+const strategyFormError = document.getElementById('strategyFormError');
+
+document.getElementById('createStrategyBtn').addEventListener('click', () => {
+  strategyForm.reset();
+  strategyFormError.textContent = '';
+  strategyModalBackdrop.classList.remove('hidden');
+});
+document.getElementById('cancelStrategyForm').addEventListener('click', () => strategyModalBackdrop.classList.add('hidden'));
+strategyModalBackdrop.addEventListener('click', (e) => { if (e.target === strategyModalBackdrop) strategyModalBackdrop.classList.add('hidden'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !strategyModalBackdrop.classList.contains('hidden')) strategyModalBackdrop.classList.add('hidden'); });
+
+strategyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(strategyForm);
+  try {
+    await apiSend('POST', '/api/strategies', { name: fd.get('name'), description: fd.get('description') });
+    strategyModalBackdrop.classList.add('hidden');
+    loadStrategies();
+  } catch (err) {
+    strategyFormError.textContent = err.message;
+  }
+});
+
+const CCY_ORDER = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF'];
+// Standard FX market quoting hierarchy -- whichever currency comes first here
+// is always the base when paired with anything later in the list (this is
+// why it's EURUSD not USDEUR, USDJPY not JPYUSD, etc).
+const FX_HIERARCHY = ['EUR', 'GBP', 'AUD', 'NZD', 'USD', 'CHF', 'JPY'];
+const METRIC_META = [
+  { key: 'interest_rate', label: 'Rate %', step: '0.01' },
+  { key: 'cpi_yoy', label: 'CPI YoY %', step: '0.01' },
+  { key: 'gdp_yoy', label: 'GDP YoY %', step: '0.01' },
+  { key: 'unemployment', label: 'Unemployment %', step: '0.01' },
+  { key: 'pmi', label: 'PMI', step: '0.1' },
+];
+// mirrors fundamentals.py SCORED_METRICS -- keep in sync if that changes
+const SCORED_METRICS = [['interest_rate', true], ['gdp_yoy', true], ['unemployment', false], ['pmi', true]];
+
+function orderPair(a, b) {
+  // Returns [baseCcy, quoteCcy] in real market-quoting order.
+  return FX_HIERARCHY.indexOf(a) < FX_HIERARCHY.indexOf(b) ? [a, b] : [b, a];
+}
+
+function computePairBias(baseRow, quoteRow) {
+  let baseScore = 0, quoteScore = 0, scoredCount = 0;
+  SCORED_METRICS.forEach(([key, higherIsStronger]) => {
+    const bv = baseRow[key], qv = quoteRow[key];
+    if (bv == null || qv == null || bv === qv) return;
+    scoredCount++;
+    if ((bv > qv) === higherIsStronger) baseScore++; else quoteScore++;
+  });
+  if (scoredCount === 0) return null;
+  if (baseScore === quoteScore) return 'Neutral';
+  return baseScore > quoteScore ? 'Bullish' : 'Bearish';
+}
+
+function macroMetricRow(row, meta) {
+  const v = row[meta.key];
+  return `<div class="macro-metric-row${v == null ? ' is-empty' : ''}">
+      <label>${meta.label}</label>
+      <input type="number" step="${meta.step}" class="macro-input" data-field="${meta.key}" value="${v == null ? '' : v}">
+    </div>`;
+}
+
+// Gold has no rate/GDP/unemployment/PMI of its own, so it can't use the same
+// scoring model as the fiat pairs. Real yield (nominal rate minus inflation)
+// is the most established driver of gold vs USD -- when real yield is
+// negative, holding cash loses purchasing power and gold (which pays no
+// yield but holds value) becomes relatively more attractive, and vice versa.
+// This deliberately does NOT capture geopolitical/safe-haven demand (wars,
+// crises, central bank buying) -- there's no macro series for that, so
+// factor current events in yourself on top of this.
+function computeGoldBias(usdRow) {
+  if (!usdRow || usdRow.interest_rate == null || usdRow.cpi_yoy == null) return { bias: null, realYield: null };
+  const realYield = Math.round((usdRow.interest_rate - usdRow.cpi_yoy) * 100) / 100;
+  const bias = realYield < 0 ? 'Bullish' : (realYield < 1.5 ? 'Neutral' : 'Bearish');
+  return { bias, realYield };
+}
+
+function renderMacroCards(rows) {
+  const byCcy = {};
+  rows.forEach(r => { byCcy[r.currency] = r; });
+  document.getElementById('macroCards').innerHTML = CCY_ORDER.map(ccy => {
+    const row = byCcy[ccy] || { currency: ccy };
+    const metricsHtml = METRIC_META.map(m => macroMetricRow(row, m)).join('');
+    let pairsHtml = CCY_ORDER.filter(o => o !== ccy).map(other => {
+      const [baseCcy, quoteCcy] = orderPair(ccy, other);
+      const baseRow = byCcy[baseCcy] || { currency: baseCcy };
+      const quoteRow = byCcy[quoteCcy] || { currency: quoteCcy };
+      const bias = computePairBias(baseRow, quoteRow);
+      const cls = bias === 'Bullish' ? 'WIN' : (bias === 'Bearish' ? 'LOSS' : 'BE');
+      return `<div class="pair-row"><span class="pair-name">${baseCcy}${quoteCcy}</span><span class="badge ${cls}">${bias || 'No data'}</span></div>`;
+    }).join('');
+    if (ccy === 'USD') {
+      const g = computeGoldBias(row);
+      const cls = g.bias === 'Bullish' ? 'WIN' : (g.bias === 'Bearish' ? 'LOSS' : 'BE');
+      const title = g.realYield != null
+        ? `Real yield proxy (rate − CPI) = ${g.realYield}%. Doesn't factor in wars/safe-haven demand -- use your own judgment on top of this.`
+        : 'Needs USD rate and CPI to compute.';
+      pairsHtml += `<div class="pair-row" title="${title}"><span class="pair-name">XAUUSD <span style="color:var(--text-muted); font-weight:400;">(yield proxy)</span></span><span class="badge ${cls}">${g.bias || 'No data'}</span></div>`;
+    }
+    return `<div class="macro-card" data-currency="${ccy}">
+        <div class="macro-card-header">
+          <div class="macro-card-title">${ccy}</div>
+          <div class="macro-card-updated">${row.updated_at ? row.updated_at.slice(0, 10) : 'no data yet'}</div>
+        </div>
+        ${metricsHtml}
+        <hr class="macro-card-divider">
+        <div class="macro-card-section-title">Bias</div>
+        <div class="macro-pairs">${pairsHtml}</div>
+      </div>`;
+  }).join('');
+}
+
+async function loadMacro() {
+  const rows = await (await fetch('/api/macro')).json();
+  renderMacroCards(rows);
+}
+
+document.getElementById('syncFredBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('syncFredBtn');
+  const spinIcon = document.getElementById('syncSpinIcon');
+  const statusEl = document.getElementById('fredSyncStatus');
+  btn.disabled = true;
+  spinIcon.classList.add('spinning');
+  statusEl.textContent = 'Syncing…';
+  try {
+    await apiSend('POST', '/api/macro/sync', {});
+    statusEl.textContent = 'Synced.';
+    setTimeout(() => { statusEl.textContent = ''; }, 2500);
+    await loadMacro();
+  } catch (e) {
+    statusEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    spinIcon.classList.remove('spinning');
+  }
+});
+
+document.getElementById('saveMacroBtn').addEventListener('click', async () => {
+  const cards = document.querySelectorAll('#macroCards .macro-card');
+  for (const card of cards) {
+    const fields = {};
+    card.querySelectorAll('.macro-input').forEach(inp => {
+      fields[inp.dataset.field] = inp.value === '' ? null : (inp.dataset.field === 'bias' ? inp.value : parseFloat(inp.value));
+    });
+    const hasData = Object.values(fields).some(v => v != null && v !== '');
+    if (!hasData) continue; // skip untouched cards so their "updated" date doesn't change
+    await apiSend('PUT', `/api/macro/${card.dataset.currency}`, fields);
+  }
+  flashSaved('macroSaved');
+  loadMacro();
+});
+
+// ---------- fundamental bias check ----------
+
+function renderFundamentals(host, data) {
+  if (!data.supported) {
+    host.innerHTML = `<div class="empty">No macro data yet for ${data.base || '?'}/${data.quote || '?'} — fill in the Macro snapshot below first.</div>`;
+    return;
+  }
+  const rows = [...data.scored_rows, data.cpi_row];
+  const trs = rows.map(r => `
+    <tr>
+      <td class="strong">${r.label}</td>
+      <td class="num">${r.base_value != null ? r.base_value : '—'}</td>
+      <td class="num">${r.quote_value != null ? r.quote_value : '—'}</td>
+      <td>${r.edge ? `<span class="badge WIN">${r.edge === 'base' ? data.base : data.quote}</span>` : '<span style="color:var(--text-muted); font-size:11px;">context only</span>'}</td>
+    </tr>
+    <tr><td colspan="4" style="color:var(--text-muted); font-size:11px; padding-top:0; border-bottom:1px solid var(--border);">${r.note}</td></tr>`).join('');
+  host.innerHTML = `
+    <div class="bw-card ${data.score.base === data.score.quote ? '' : 'bw-good'}" style="margin-bottom:16px;">
+      <div class="bw-label">Conclusion — ${data.base}/${data.quote}</div>
+      <div style="font-size:14px; color:var(--text-primary); margin-top:6px; line-height:1.6;">${data.verdict}</div>
+    </div>
+    <table>
+      <thead><tr><th>Metric</th><th class="num">${data.base}</th><th class="num">${data.quote}</th><th>Edge</th></tr></thead>
+      <tbody>${trs}</tbody>
+    </table>`;
+}
+
+async function loadFundamentals() {
+  const pair = document.getElementById('biasPair').value.trim().toUpperCase();
+  const errEl = document.getElementById('biasError');
+  const resultEl = document.getElementById('fundamentalsResult');
+  errEl.textContent = '';
+  if (!pair) { resultEl.innerHTML = ''; return; }
+  const r = await fetch(`/api/fundamentals/${pair}`);
+  const data = await r.json();
+  if (!r.ok) { errEl.textContent = data.error || 'Error'; resultEl.innerHTML = ''; return; }
+  renderFundamentals(resultEl, data);
+}
+
+document.getElementById('checkFundamentalsBtn').addEventListener('click', loadFundamentals);
+document.getElementById('biasPair').addEventListener('change', loadFundamentals);
+
+DC.setupTabs();
+DC.setupThemeToggle('themeToggle');
+(async function init() {
+  await refreshAndRender();
+  loadStrategies();
+  loadMacro();
+})();
+</script>
+</body>
+</html>

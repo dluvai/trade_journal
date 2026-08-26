@@ -1,0 +1,7 @@
+# Your actual trade data and generated exports -- never commit these.
+trades.db
+dashboard.html
+
+__pycache__/
+*.pyc
+.env
