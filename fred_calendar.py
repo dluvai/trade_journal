@@ -107,16 +107,20 @@ def next_release_dates():
 
     result = {}
     seen_releases = {}
+    any_success = False
     for metric, release_id in METRIC_RELEASE_IDS.items():
         if release_id not in seen_releases:
             try:
                 dates = _fetch_release_dates(release_id, api_key)
                 seen_releases[release_id] = dates[0] if dates else None
+                any_success = True
             except Exception:
                 seen_releases[release_id] = None
         result[metric] = seen_releases[release_id]
 
-    _cache["next_dates"] = (time.time(), result)
+    # See upcoming_events() for why a total failure isn't cached for the
+    # full 6 hours.
+    _cache["next_dates"] = (time.time(), result) if any_success else (time.time() - 6 * 3600 + 60, result)
     return result
 
 
@@ -136,9 +140,11 @@ def upcoming_events(days_ahead=14):
     today = date.today()
     cutoff = today + timedelta(days=days_ahead)
     events = []
+    any_success = False
     for release_id, label in RELEASE_LABELS.items():
         try:
             dates = _fetch_release_dates(release_id, api_key, limit=5)
+            any_success = True
         except Exception:
             continue
         for d in dates:
@@ -146,7 +152,13 @@ def upcoming_events(days_ahead=14):
             if today <= d_obj <= cutoff:
                 events.append({"date": d, "currency": "USD", "label": label, "time_utc": _time_utc_for(d_obj)})
 
-    _cache["upcoming"] = (time.time(), events)
+    # Only cache for the full 6 hours if at least one release actually came
+    # back -- if every fetch failed (a transient network hiccup, same kind
+    # seen hitting FRED from debt_model.py), that's not "nothing scheduled",
+    # it's "couldn't check". Caching that for 6 hours would turn one bad
+    # moment into 6 hours of a wrongly-empty calendar, so a total failure
+    # gets remembered for 1 minute instead, and the next request retries.
+    _cache["upcoming"] = (time.time(), events) if any_success else (time.time() - 6 * 3600 + 60, events)
     return events
 
 
