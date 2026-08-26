@@ -7,11 +7,11 @@
   <span style="color:var(--text-muted); font-size:11.5px;">Shows this currency's macro details below.</span>
 </div>
 <div class="panel" id="debtPanel" style="display:none;">
-  <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
+  <h2>US Federal Debt Sustainability <span class="n" id="debtAsOf"></span></h2>
   <div id="debtContent"></div>
 </div>
 <div class="panel">
-  <h2>Fundamental bias check</h2>
+  <h2>Fundamentals</h2>
   <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
     <span style="font-family:var(--font-mono); font-weight:600; font-size:14px;" id="biasBaseLabel">USD</span>
     <span style="color:var(--text-muted); font-size:12px;">vs</span>
@@ -22,7 +22,7 @@
 </div>
 <div class="panel">
   <div class="workspace-head">
-    <h2 style="margin:0;">Macro workspace</h2>
+    <h2 style="margin:0;">Macro Workspace</h2>
     <div class="form-actions">
       <button class="btn-primary" id="saveMacroBtn">Save changes</button>
       <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP and CPI for every currency, unemployment for USD/GBP/JPY/AUD/CAD, and trade balance for every currency except EUR. EUR also gets core CPI YoY. USD only gets core PPI/PCE (plus PCE MoM), nonfarm payrolls change, retail sales and current account -- no fresh free source found for those on other currencies. PMI always stays manual.">
@@ -35,7 +35,7 @@
   <div id="macroWorkspace"></div>
 </div>
 <div class="panel">
-  <h2><span id="ccyNewsTitle">USD</span> news</h2>
+  <h2><span id="ccyNewsTitle">USD</span> News</h2>
   <div class="news-panel-body" id="ccyNewsPanel"></div>
 </div>
 {% endblock %}
@@ -137,7 +137,12 @@ let RATE_CALENDAR = {};
 let selectedCcy = 'USD';
 let LATEST_MACRO_ROWS = [];
 // mirrors fundamentals.py SCORED_METRICS -- keep in sync if that changes
-const SCORED_METRICS = [['interest_rate', true], ['gdp_yoy', true], ['unemployment', false], ['pmi', true]];
+const SCORED_METRICS = [
+  ['interest_rate', true], ['gdp_yoy', true], ['unemployment', false], ['pmi', true],
+  ['cpi_yoy', true], ['cpi_mom', true], ['core_cpi_yoy', true], ['core_ppi_yoy', true],
+  ['core_pce_yoy', true], ['core_pce_mom', true], ['employment_change', true],
+  ['retail_sales_yoy', true], ['trade_balance', true], ['current_account', true],
+];
 
 function orderPair(a, b) {
   // Returns [baseCcy, quoteCcy] in real market-quoting order.

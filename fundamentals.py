@@ -11,6 +11,15 @@ METRIC_LABELS = {
     "unemployment": "Unemployment rate",
     "pmi": "PMI (manufacturing)",
     "cpi_yoy": "CPI (YoY inflation)",
+    "cpi_mom": "CPI (MoM inflation)",
+    "core_cpi_yoy": "Core CPI (YoY)",
+    "core_ppi_yoy": "Core PPI (YoY)",
+    "core_pce_yoy": "Core PCE (YoY)",
+    "core_pce_mom": "Core PCE (MoM)",
+    "employment_change": "Employment change",
+    "retail_sales_yoy": "Retail sales (YoY)",
+    "trade_balance": "Trade balance",
+    "current_account": "Current account",
 }
 
 METRIC_EXPLAINERS = {
@@ -31,17 +40,74 @@ METRIC_EXPLAINERS = {
         "contraction. Rising PMI usually supports the currency as it points to accelerating "
         "economic activity."
     ),
+    "cpi_yoy": (
+        "Hotter inflation raises the odds of the central bank tightening (rate hikes) to cool "
+        "it, which is typically currency-supportive in the near term -- the same logic as the "
+        "policy rate itself, just one step upstream of it."
+    ),
+    "cpi_mom": (
+        "Month-over-month inflation -- a noisier, more immediate read than the annual figure; "
+        "a hot print raises the odds of near-term rate-hike pressure."
+    ),
+    "core_cpi_yoy": (
+        "Strips out volatile food and energy prices -- the central bank's preferred inflation "
+        "gauge for policy decisions, since it reflects underlying price pressure rather than "
+        "one-off swings."
+    ),
+    "core_ppi_yoy": (
+        "Pipeline inflation at the producer level -- rising producer costs often get passed "
+        "through to consumer prices later, making this a leading indicator for future CPI."
+    ),
+    "core_pce_yoy": (
+        "The Fed's own preferred inflation gauge, distinct from CPI -- weighted differently and "
+        "adjusted for consumers substituting cheaper goods, which the Fed considers a more "
+        "accurate read on underlying inflation."
+    ),
+    "core_pce_mom": (
+        "Month-over-month core PCE -- the same Fed-preferred gauge as Core PCE YoY, just the "
+        "more immediate monthly read."
+    ),
+    "employment_change": (
+        "The net change in jobs for the month -- a strong print signals a resilient labor "
+        "market and economic momentum (currency-positive); a weak or negative print raises "
+        "recession concern."
+    ),
+    "retail_sales_yoy": (
+        "Consumer spending makes up the bulk of most economies' GDP -- rising retail sales "
+        "signal healthy demand and economic momentum."
+    ),
+    "trade_balance": (
+        "A surplus (more exports than imports) means net foreign demand for the currency to "
+        "pay for those exports -- currency-supportive; a persistent deficit works the other way."
+    ),
+    "current_account": (
+        "The broadest measure of transactions with the rest of the world (trade plus investment "
+        "income) -- a surplus reflects net foreign demand for the currency; a persistent deficit "
+        "typically needs financing by capital inflows, which can pressure it lower over time."
+    ),
 }
 
-# (metric key, higher value = stronger currency). CPI deliberately isn't
-# scored -- its direction depends on where inflation sits relative to
-# target, not just whether it's higher or lower -- so it's left out of the
-# comparison entirely rather than shown unscored ("context only").
+# (metric key, higher value = stronger currency). Every macro metric the app
+# tracks gets scored the same way -- included in a given pair's comparison
+# only when both currencies actually have a value for it (see compare_pair),
+# so nothing is ever shown half-resolved. Unemployment is the only metric
+# where a lower reading is the stronger one; every other tracked metric
+# follows "higher is currency-positive."
 SCORED_METRICS = [
     ("interest_rate", True),
     ("gdp_yoy", True),
     ("unemployment", False),
     ("pmi", True),
+    ("cpi_yoy", True),
+    ("cpi_mom", True),
+    ("core_cpi_yoy", True),
+    ("core_ppi_yoy", True),
+    ("core_pce_yoy", True),
+    ("core_pce_mom", True),
+    ("employment_change", True),
+    ("retail_sales_yoy", True),
+    ("trade_balance", True),
+    ("current_account", True),
 ]
 
 
@@ -101,9 +167,8 @@ def generate_verdict(comparison):
 
     if scored_count == 0:
         return (
-            f"{base} and {quote} are tied on every metric entered so far, or there isn't "
-            f"enough data yet -- fill in interest rate, GDP, unemployment, or PMI for both "
-            f"in the macro snapshot below."
+            f"{base} and {quote} are tied on every metric entered so far, or there isn't enough "
+            f"data yet -- fill in at least one shared macro metric for both in the workspace below."
         )
 
     base_reasons = [r["label"].lower() for r in rows if r["edge"] == "base"]

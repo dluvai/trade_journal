@@ -861,7 +861,7 @@ const DC = (function () {
     if (!tradeModalState) return;
     const tradeForm = document.getElementById('tradeForm');
     tradeModalState.editingId = trade.id;
-    document.getElementById('formTitle').textContent = `Edit trade #${trade.id} — ${trade.date} ${trade.pair || ''}`;
+    document.getElementById('formTitle').textContent = `Edit Trade #${trade.id} — ${trade.date} ${trade.pair || ''}`;
     tradeForm.date.value = trade.date;
     tradeForm.session.value = trade.session || 'London';
     tradeForm.pair.value = trade.pair || '';
@@ -882,7 +882,7 @@ const DC = (function () {
     if (!tradeModalState) return;
     tradeModalState.editingId = null;
     const tradeForm = document.getElementById('tradeForm');
-    document.getElementById('formTitle').textContent = 'Add trade';
+    document.getElementById('formTitle').textContent = 'Add Trade';
     tradeForm.reset();
     tradeForm.date.value = new Date().toISOString().slice(0, 10);
     document.getElementById('formError').textContent = '';
