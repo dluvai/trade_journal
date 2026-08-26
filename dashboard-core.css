@@ -503,7 +503,15 @@ body:has(.sidebar:hover) .page-shell, body:has(.sidebar:focus-within) .page-shel
    (JS-driven, see DC.initMobileSidebar), fully expanded and unhidden by
    hover state entirely -- and content no longer reserves 60px it isn't
    using while the drawer's closed. */
-@media (max-width: 768px) {
+/* Gated on (hover: none), not just max-width, on purpose -- a narrow
+   max-width alone also matches a zoomed-in desktop browser (browser zoom
+   shrinks the effective CSS-pixel viewport, same as a narrower screen
+   would), which would otherwise flip a real mouse-driven desktop into the
+   touch drawer mid-zoom. (hover: none) is only true for devices that
+   genuinely lack a hover-capable pointer -- real phones/tablets -- so a
+   zoomed-in desktop with a real cursor keeps the desktop hover sidebar
+   at any zoom level, and only genuine touch devices get the drawer. */
+@media (max-width: 768px) and (hover: none) {
   .sidebar {
     width: 220px; transform: translateX(-100%); transition: transform .2s ease;
   }
