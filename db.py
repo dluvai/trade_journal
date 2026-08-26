@@ -50,15 +50,15 @@ CREATE TABLE IF NOT EXISTS strategies (
 );
 """
 
-MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF"]
+MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
 
 # Single source of truth for every macro metric the app tracks. Their actual
 # table columns (plus a prev_<key> twin for each) are added by the migration
 # below rather than spelled out in SCHEMA -- adding a new metric here is
 # enough, no separate CREATE TABLE edit needed.
 MACRO_METRIC_KEYS = [
-    "interest_rate", "cpi_yoy", "cpi_mom", "core_cpi_yoy", "core_ppi_yoy", "core_pce_yoy",
-    "unemployment", "retail_sales_yoy", "trade_balance", "current_account", "gdp_yoy", "pmi",
+    "interest_rate", "cpi_yoy", "cpi_mom", "core_cpi_yoy", "core_ppi_yoy", "core_pce_yoy", "core_pce_mom",
+    "unemployment", "employment_change", "retail_sales_yoy", "trade_balance", "current_account", "gdp_yoy", "pmi",
 ]
 
 

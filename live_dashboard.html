@@ -101,10 +101,6 @@
     <div class="form-actions" style="margin-bottom:14px;">
       <button class="iconbtn" id="exportCsvBtnBias">Export CSV</button>
     </div>
-    <div class="panel">
-      <h2>Upcoming this fortnight</h2>
-      <div id="calendarStrip"></div>
-    </div>
     <div class="panel" id="debtPanel" style="display:none;">
       <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
       <div id="debtContent"></div>
@@ -125,7 +121,7 @@
         <h2 style="margin:0;">Macro workspace</h2>
         <div class="form-actions">
           <button class="btn-primary" id="saveMacroBtn">Save changes</button>
-          <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP and CPI for every currency, unemployment for USD/GBP/JPY/AUD, and trade balance for every currency except EUR. USD only gets core CPI/PPI/PCE, retail sales and current account -- no fresh free source found for the other six on those. PMI always stays manual.">
+          <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP and CPI for every currency, unemployment for USD/GBP/JPY/AUD/CAD, and trade balance for every currency except EUR. EUR also gets core CPI YoY. USD only gets core PPI/PCE (plus PCE MoM), nonfarm payrolls change, retail sales and current account -- no fresh free source found for those on other currencies. PMI always stays manual.">
             <span class="spin-icon" id="syncSpinIcon">⟳</span> Sync
           </button>
           <span id="macroSaved" class="save-flash"></span>
@@ -134,6 +130,10 @@
       </div>
       <div class="ccy-switcher segmented" id="ccySwitcher"></div>
       <div id="macroWorkspace"></div>
+    </div>
+    <div class="panel">
+      <h2>Upcoming this fortnight</h2>
+      <div id="calendarStrip"></div>
     </div>
     <div class="panel">
       <h2><span id="ccyNewsTitle">USD</span> news</h2>
@@ -429,11 +429,12 @@ strategyForm.addEventListener('submit', async (e) => {
   }
 });
 
-const CCY_ORDER = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF'];
+const CCY_ORDER = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD'];
 // Standard FX market quoting hierarchy -- whichever currency comes first here
 // is always the base when paired with anything later in the list (this is
-// why it's EURUSD not USDEUR, USDJPY not JPYUSD, etc).
-const FX_HIERARCHY = ['EUR', 'GBP', 'AUD', 'NZD', 'USD', 'CHF', 'JPY'];
+// why it's EURUSD not USDEUR, USDJPY not JPYUSD, etc). CAD sits right after
+// USD since USD/CAD quotes USD as the base.
+const FX_HIERARCHY = ['EUR', 'GBP', 'AUD', 'NZD', 'USD', 'CAD', 'CHF', 'JPY'];
 // Grouped the way the workspace displays them -- e.g. every inflation
 // gauge (headline/core CPI, core PPI, core PCE) sits in one Inflation card
 // instead of four separate tiles. Coverage beyond the original 5 metrics
@@ -451,18 +452,20 @@ const METRIC_GROUPS = [
   { title: 'Inflation', metrics: [
     { key: 'cpi_yoy', label: 'CPI YoY', suffix: '%', step: '0.01' },
     { key: 'cpi_mom', label: 'CPI MoM', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
-    { key: 'core_cpi_yoy', label: 'Core CPI YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'core_cpi_yoy', label: 'Core CPI YoY', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
     { key: 'core_ppi_yoy', label: 'Core PPI YoY', suffix: '%', step: '0.01', applies: ['USD'] },
     { key: 'core_pce_yoy', label: 'Core PCE YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'core_pce_mom', label: 'Core PCE MoM', suffix: '%', step: '0.01', applies: ['USD'] },
   ] },
   { title: 'Labor', metrics: [
     { key: 'unemployment', label: 'Unemployment', suffix: '%', step: '0.01' },
+    { key: 'employment_change', label: 'Employment change', suffix: 'K', step: '1', applies: ['USD'] },
   ] },
   { title: 'Activity', metrics: [
     { key: 'retail_sales_yoy', label: 'Retail sales YoY', suffix: '%', step: '0.01', applies: ['USD'] },
   ] },
   { title: 'Trade', metrics: [
-    { key: 'trade_balance', label: 'Trade balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF'] },
+    { key: 'trade_balance', label: 'Trade balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD'] },
   ] },
   { title: 'Current account', metrics: [
     { key: 'current_account', label: 'Balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD'] },
@@ -576,6 +579,7 @@ function renderCcySwitcher() {
       renderMacroWorkspace(LATEST_MACRO_ROWS);
       document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
       loadCcyNews();
+      renderCalendarStrip();
     });
   });
 }
@@ -615,27 +619,38 @@ async function loadDebtSnapshot() {
 // Currency-agnostic (spans every currency at once), so this loads once on
 // init rather than re-fetching on every currency switch like the macro
 // workspace does -- see calendar_view.py for how the two sources merge.
+let CALENDAR_EVENTS_CACHE = [];
+
 async function loadCalendarStrip() {
-  const host = document.getElementById('calendarStrip');
   try {
-    const events = await (await fetch('/api/calendar')).json();
-    if (!events.length) {
-      host.innerHTML = '<div class="empty">Nothing scheduled in the next two weeks (or FRED_API_KEY isn\'t set, so only rate decisions would show).</div>';
-      return;
-    }
-    const rows = events.map(e => `
-      <tr>
-        <td class="strong" style="font-family:var(--font-mono);">${e.date}</td>
-        <td>${e.currency}</td>
-        <td>${e.label}</td>
-      </tr>`).join('');
-    host.innerHTML = `<table>
-      <thead><tr><th>Date</th><th>Currency</th><th>Event</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    CALENDAR_EVENTS_CACHE = await (await fetch('/api/calendar')).json();
   } catch (e) {
-    host.innerHTML = '<div class="empty">Calendar unavailable right now.</div>';
+    CALENDAR_EVENTS_CACHE = null; // distinct from [] -- [] means "fetched fine, nothing due"; null means "the fetch itself failed"
   }
+  renderCalendarStrip();
+}
+
+// Filters the already-fetched events by whichever currency is selected in
+// the switcher -- no new network request needed, the full fortnight's
+// events are small enough to just fetch once and filter client-side.
+function renderCalendarStrip() {
+  const host = document.getElementById('calendarStrip');
+  if (CALENDAR_EVENTS_CACHE === null) { host.innerHTML = '<div class="empty">Calendar unavailable right now.</div>'; return; }
+  const events = CALENDAR_EVENTS_CACHE.filter(e => e.currency === selectedCcy);
+  if (!events.length) {
+    host.innerHTML = `<div class="empty">Nothing scheduled for ${selectedCcy} in the next two weeks (or FRED_API_KEY isn't set, so only rate decisions would show).</div>`;
+    return;
+  }
+  const rows = events.map(e => `
+    <tr>
+      <td class="strong" style="font-family:var(--font-mono);">${e.date}</td>
+      <td>${e.currency}</td>
+      <td>${e.label}</td>
+    </tr>`).join('');
+  host.innerHTML = `<table>
+    <thead><tr><th>Date</th><th>Currency</th><th>Event</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 // USD-only real release-calendar dates (see fred_calendar.py) -- silently

@@ -55,6 +55,8 @@ SERIES = {
         "core_cpi_yoy":  ("CPILFESL", "yoy"),               # CPI less food & energy, monthly
         "core_ppi_yoy":  ("PPIFES", "yoy"),                 # PPI, Final Demand less food & energy, monthly
         "core_pce_yoy":  ("PCEPILFE", "yoy"),               # Core PCE price index -- the Fed's preferred gauge, monthly
+        "core_pce_mom":  ("PCEPILFE", "mom"),               # same index, month-over-month
+        "employment_change": ("PAYEMS", "mom_diff"),        # Nonfarm payrolls, monthly change (thousands of jobs)
         "retail_sales_yoy": ("RSAFS", "yoy"),               # Advance retail sales, monthly
         "trade_balance":    ("BOPGSTB", "level", 0.001),   # Trade balance, goods+services, monthly ($M -> $B)
         "current_account":  ("IEABC", "level", 0.001),     # Current account balance, quarterly ($M -> $B)
@@ -64,6 +66,7 @@ SERIES = {
         "gdp_yoy":       ("CLVMEURSCAB1GQEA19", "yoy"),     # Real GDP, Euro Area 19, quarterly
         "cpi_yoy":       ("CP0000EZ19M086NEST", "yoy"),     # HICP index, monthly
         "cpi_mom":       ("CP0000EZ19M086NEST", "mom"),     # same index, month-over-month
+        "core_cpi_yoy":  ("TOTNRGFOODEA20MI15XM", "yoy"),   # HICP ex energy/food/alcohol/tobacco, Euro Area 20, monthly
     },
     "GBP": {
         "interest_rate": ("IR3TIB01GBM156N", "level"),      # 3-month interbank rate (BoE-rate proxy)
@@ -100,6 +103,13 @@ SERIES = {
         "trade_balance": ("XTNTVA01CHM667S", "level", 1e-9),  # $, exchange-rate converted -> $B
         # unemployment: no fresh free FRED mirror found for CH -- stays manual
     },
+    "CAD": {
+        "interest_rate": ("IR3TIB01CAM156N", "level"),      # 3-month interbank rate (BoC policy-rate proxy)
+        "gdp_yoy":       ("NGDPRSAXDCCAQ", "yoy"),          # Real GDP, quarterly
+        "unemployment":  ("LRHUTTTTCAM156S", "level"),
+        "cpi_yoy":       ("FPCPITOTLZGCAN", "level"),       # World Bank annual inflation
+        "trade_balance": ("XTNTVA01CAM667S", "level", 1e-9),  # $, exchange-rate converted -> $B
+    },
 }
 
 PROXY_NOTES = {
@@ -108,11 +118,13 @@ PROXY_NOTES = {
     ("AUD", "interest_rate"): "Interbank rate used as a proxy for RBA cash-rate stance, not the literal cash rate.",
     ("NZD", "interest_rate"): "3-month interbank rate used as a proxy for RBNZ OCR stance, not the literal OCR.",
     ("CHF", "interest_rate"): "3-month interbank rate used as a proxy for SNB policy-rate stance, not the literal policy rate.",
+    ("CAD", "interest_rate"): "3-month interbank rate used as a proxy for BoC policy-rate stance, not the literal policy rate.",
     ("GBP", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
     ("JPY", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
     ("AUD", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
     ("NZD", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
     ("CHF", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
+    ("CAD", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
     ("NZD", "gdp_yoy"): "No YoY series available -- compounded from the last 4 quarterly growth readings instead.",
     ("CHF", "gdp_yoy"): "No YoY series available -- compounded from the last 4 quarterly growth readings instead.",
 }
@@ -166,6 +178,18 @@ def _mom(rows):
     return latest_date, round((latest_value / prior_value - 1) * 100, 2)
 
 
+def _mom_diff(rows):
+    # For a level series like nonfarm payrolls, the conventional "change"
+    # figure is the raw difference (e.g. "+150K jobs"), not a percentage --
+    # a % change on a number already in the hundred-millions is meaningless
+    # to read at a glance.
+    if len(rows) < 2:
+        return (rows[-1][0], None) if rows else (None, None)
+    latest_date, latest_value = rows[-1]
+    _, prior_value = rows[-2]
+    return latest_date, round(latest_value - prior_value, 2)
+
+
 def _qoq_compounded_to_yoy(rows):
     # NZ and CH's GDP mirrors on FRED are already quarter-over-quarter growth
     # rates (confirmed by hand: values oscillate roughly -2..+4, including
@@ -195,6 +219,8 @@ def fetch_metric(series_id, mode):
         return _qoq_compounded_to_yoy(rows)
     if mode == "mom":
         return _mom(rows)
+    if mode == "mom_diff":
+        return _mom_diff(rows)
     return _yoy(rows)
 
 
