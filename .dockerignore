@@ -1,0 +1,7 @@
+.git
+.gitignore
+trades.db
+dashboard.html
+__pycache__
+*.pyc
+Start Dashboard.bat
