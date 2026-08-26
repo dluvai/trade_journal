@@ -101,6 +101,10 @@
     <div class="form-actions" style="margin-bottom:14px;">
       <button class="iconbtn" id="exportCsvBtnBias">Export CSV</button>
     </div>
+    <div class="panel">
+      <h2>Upcoming this fortnight</h2>
+      <div id="calendarStrip"></div>
+    </div>
     <div class="panel" id="debtPanel" style="display:none;">
       <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
       <div id="debtContent"></div>
@@ -608,6 +612,32 @@ async function loadDebtSnapshot() {
   `;
 }
 
+// Currency-agnostic (spans every currency at once), so this loads once on
+// init rather than re-fetching on every currency switch like the macro
+// workspace does -- see calendar_view.py for how the two sources merge.
+async function loadCalendarStrip() {
+  const host = document.getElementById('calendarStrip');
+  try {
+    const events = await (await fetch('/api/calendar')).json();
+    if (!events.length) {
+      host.innerHTML = '<div class="empty">Nothing scheduled in the next two weeks (or FRED_API_KEY isn\'t set, so only rate decisions would show).</div>';
+      return;
+    }
+    const rows = events.map(e => `
+      <tr>
+        <td class="strong" style="font-family:var(--font-mono);">${e.date}</td>
+        <td>${e.currency}</td>
+        <td>${e.label}</td>
+      </tr>`).join('');
+    host.innerHTML = `<table>
+      <thead><tr><th>Date</th><th>Currency</th><th>Event</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch (e) {
+    host.innerHTML = '<div class="empty">Calendar unavailable right now.</div>';
+  }
+}
+
 // USD-only real release-calendar dates (see fred_calendar.py) -- silently
 // stays empty if FRED_API_KEY isn't set, no error shown for that case.
 async function loadReleaseCalendar() {
@@ -870,6 +900,7 @@ DC.setupTabs();
   await loadMacro();
   loadReleaseCalendar();
   loadRateCalendar();
+  loadCalendarStrip();
   loadDebtSnapshot();
   loadCcyNews();
   loadTicker();

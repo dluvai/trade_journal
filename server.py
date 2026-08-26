@@ -38,6 +38,7 @@ from flask import Flask, jsonify, redirect, request, send_from_directory, sessio
 
 import ai_bias
 import backup
+import calendar_view
 import db
 import debt_model
 import fred_calendar
@@ -286,6 +287,11 @@ def api_release_calendar():
 @app.get("/api/rate-calendar")
 def api_rate_calendar():
     return jsonify(rate_calendar.next_decisions())
+
+
+@app.get("/api/calendar")
+def api_calendar():
+    return jsonify(calendar_view.upcoming_events())
 
 
 @app.get("/api/fundamentals/<pair>")

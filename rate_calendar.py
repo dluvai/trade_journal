@@ -25,7 +25,7 @@ NZD and CHF are left out on purpose, not guessed:
 This list WILL go stale -- it only covers 2026 decisions and needs a manual
 refresh (repeat the lookups above) once these run out or a new year starts.
 """
-from datetime import date
+from datetime import date, timedelta
 
 DECISION_DATES = {
     "USD": ["2026-09-16", "2026-10-28", "2026-12-09"],
@@ -46,6 +46,21 @@ def next_decisions():
         upcoming = [d for d in dates if d >= today]
         result[ccy] = min(upcoming) if upcoming else None
     return result
+
+
+def upcoming_events(days_ahead=14):
+    """[{date, currency, label}] for every rate decision due in the next
+    `days_ahead` days, across every currency -- same shape as
+    fred_calendar.upcoming_events() so the two can be merged into one list."""
+    today = date.today()
+    cutoff = (today + timedelta(days=days_ahead)).isoformat()
+    today_str = today.isoformat()
+    events = []
+    for ccy, dates in DECISION_DATES.items():
+        for d in dates:
+            if today_str <= d <= cutoff:
+                events.append({"date": d, "currency": ccy, "label": "Rate decision"})
+    return events
 
 
 if __name__ == "__main__":
