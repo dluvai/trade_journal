@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Overview — Felix Trade Journal{% endblock %}
+{% block header_controls %}<div class="segmented" id="yearFilter"></div>{% endblock %}
+{% block content %}
+<div class="tiles" id="tiles"></div>
+<div class="panel">
+  <h2>Equity curve</h2>
+  <div id="equityChart"></div>
+</div>
+<div class="panel">
+  <h2>Win / Loss / Breakeven</h2>
+  <div id="donutChart"></div>
+</div>
+<div class="panel">
+  <h2>Win rate by day of week</h2>
+  <div id="dayChart"></div>
+</div>
+<div class="panel">
+  <h2>Win rate by session</h2>
+  <div id="sessionChart"></div>
+</div>
+<div class="panel">
+  <h2>Monthly return</h2>
+  <div id="monthChart"></div>
+</div>
+<div class="panel">
+  <h2>RR distribution</h2>
+  <div id="rrHistogram"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let ALL_TRADES = [];
+let currentYear = 'all';
+
+function render() {
+  DC.renderAll(ALL_TRADES, currentYear, {
+    onYearChange: (y) => { currentYear = y; render(); },
+    subheadText: (n) => `${n} trades total`,
+  });
+}
+
+(async function init() {
+  ALL_TRADES = await DC.fetchTrades();
+  render();
+})();
+</script>
+{% endblock %}

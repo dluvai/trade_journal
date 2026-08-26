@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Strategy — Felix Trade Journal{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Performance by strategy</h2>
+  <div id="strategyPerformance"></div>
+</div>
+<div class="panel">
+  <div class="form-actions" style="margin-bottom:16px;">
+    <button class="btn-primary" id="createStrategyBtn">+ Create Strategy</button>
+  </div>
+  <div id="strategiesList"></div>
+</div>
+{% endblock %}
+{% block modals %}
+<div class="modal-backdrop hidden" id="strategyModalBackdrop">
+  <div class="modal">
+    <h2>Create strategy</h2>
+    <form id="strategyForm">
+      <div class="field" style="margin-bottom:12px;">
+        <label>Name</label>
+        <input type="text" name="name" placeholder="e.g. A-B0-B1-B2-C Liquidity Sweep" required>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>What you look for in the market</label>
+        <textarea name="description" rows="8" class="strategy-textarea" placeholder="Describe your setup: entry criteria, confirmation signals, risk rules, invalidation conditions..."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="iconbtn" id="cancelStrategyForm">Cancel</button>
+        <span id="strategyFormError" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let ALL_TRADES = [];
+let ALL_STRATEGIES = [];
+
+// Reuses the exact same grouping/rendering the Pairs page uses for
+// performance-by-pair -- a strategy tag on a trade is just another grouping
+// key, same as pair/day/session already are.
+function renderStrategyPerformance() {
+  const groups = DC.computeGroupStats(ALL_TRADES, 'strategy_name');
+  const shaped = groups.map(g => ({ pair: g.key, total: g.total, wins: g.wins, pnl: g.pnl }));
+  DC.renderPairTable('strategyPerformance', shaped, 'Strategy');
+}
+
+function renderStrategiesList(list) {
+  const host = document.getElementById('strategiesList');
+  if (!list.length) { host.innerHTML = '<div class="empty">No strategies yet — click "+ Create Strategy" to add one.</div>'; return; }
+  host.innerHTML = [...list].reverse().map(s => `
+    <div class="panel" style="margin-bottom:12px;">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+        <h2 style="margin:0;">${s.name}</h2>
+        <button class="iconbtn small danger" data-delete-strategy="${s.id}">Delete</button>
+      </div>
+      <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.65; white-space:pre-wrap; margin-top:10px;">${s.description || '<em>No details written.</em>'}</div>
+    </div>`).join('');
+  host.querySelectorAll('[data-delete-strategy]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this strategy?')) return;
+      await DC.apiSend('DELETE', `/api/strategies/${btn.dataset.deleteStrategy}`, {});
+      loadStrategies();
+    });
+  });
+}
+
+async function loadStrategies() {
+  ALL_STRATEGIES = await DC.fetchStrategies();
+  renderStrategiesList(ALL_STRATEGIES);
+  renderStrategyPerformance();
+  document.getElementById('subhead').textContent = `${ALL_STRATEGIES.length} strategies`;
+}
+
+const strategyModalBackdrop = document.getElementById('strategyModalBackdrop');
+const strategyForm = document.getElementById('strategyForm');
+const strategyFormError = document.getElementById('strategyFormError');
+
+document.getElementById('createStrategyBtn').addEventListener('click', () => {
+  strategyForm.reset();
+  strategyFormError.textContent = '';
+  strategyModalBackdrop.classList.remove('hidden');
+});
+document.getElementById('cancelStrategyForm').addEventListener('click', () => strategyModalBackdrop.classList.add('hidden'));
+strategyModalBackdrop.addEventListener('click', (e) => { if (e.target === strategyModalBackdrop) strategyModalBackdrop.classList.add('hidden'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !strategyModalBackdrop.classList.contains('hidden')) strategyModalBackdrop.classList.add('hidden'); });
+
+strategyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(strategyForm);
+  try {
+    await DC.apiSend('POST', '/api/strategies', { name: fd.get('name'), description: fd.get('description') });
+    strategyModalBackdrop.classList.add('hidden');
+    loadStrategies();
+  } catch (err) {
+    strategyFormError.textContent = err.message;
+  }
+});
+
+(async function init() {
+  ALL_TRADES = await DC.fetchTrades();
+  loadStrategies();
+})();
+</script>
+{% endblock %}

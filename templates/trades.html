@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Trades — Felix Trade Journal{% endblock %}
+{% block header_controls %}<div class="segmented" id="yearFilter"></div>{% endblock %}
+{% block content %}
+<div class="form-actions" style="margin-bottom:14px;">
+  <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
+</div>
+<div id="bestWorstTrades"></div>
+<div class="panel">
+  <h2>Trade calendar</h2>
+  <div id="calendarGrid"></div>
+</div>
+<div id="calendarDetails"></div>
+<div class="panel">
+  <h2>Trades</h2>
+  <div class="table-scroll"><div id="tradesTable"></div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let ALL_TRADES = [];
+let currentYear = 'all';
+
+function onEditTrade(id) {
+  const t = ALL_TRADES.find(x => x.id === id);
+  if (t) DC.openEditTradeModal(t);
+}
+
+async function onDeleteTrade(id) {
+  if (!confirm('Delete this trade? This cannot be undone.')) return;
+  await DC.deleteTrade(id);
+  window.location.reload();
+}
+
+function render() {
+  DC.renderAll(ALL_TRADES, currentYear, {
+    onYearChange: (y) => { currentYear = y; render(); },
+    onEdit: onEditTrade,
+    onDelete: onDeleteTrade,
+    subheadText: (n) => `${n} trades total`,
+  });
+}
+
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  DC.exportCsv(ALL_TRADES, `trade_journal_export_${new Date().toISOString().slice(0, 10)}.csv`);
+});
+
+(async function init() {
+  ALL_TRADES = await DC.fetchTrades();
+  render();
+})();
+</script>
+{% endblock %}

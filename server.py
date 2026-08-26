@@ -34,7 +34,7 @@ import secrets
 from functools import wraps
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, request, send_from_directory, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 
 import ai_bias
 import auto_sync
@@ -146,9 +146,50 @@ def clean_payload(body):
     return fields
 
 
+# Kept named `index`, still bound to `/` -- login() redirects to
+# url_for("index") on success, so renaming this would silently break that.
 @app.get("/")
 def index():
-    return send_from_directory(HERE, "live_dashboard.html")
+    return redirect(url_for("overview"))
+
+
+NAV_ITEMS = [
+    {"key": "overview", "label": "Overview", "endpoint": "overview"},
+    {"key": "trades", "label": "Trades", "endpoint": "trades_page"},
+    {"key": "pairs", "label": "Pairs", "endpoint": "pairs_page"},
+    {"key": "macros", "label": "Macros", "endpoint": "macros_page"},
+    {"key": "strategy", "label": "Strategy", "endpoint": "strategy_page"},
+]
+
+
+@app.context_processor
+def inject_nav():
+    return {"nav_items": NAV_ITEMS}
+
+
+@app.get("/overview")
+def overview():
+    return render_template("overview.html", active_page="overview")
+
+
+@app.get("/trades")
+def trades_page():
+    return render_template("trades.html", active_page="trades")
+
+
+@app.get("/pairs")
+def pairs_page():
+    return render_template("pairs.html", active_page="pairs")
+
+
+@app.get("/macros")
+def macros_page():
+    return render_template("macros.html", active_page="macros")
+
+
+@app.get("/strategy")
+def strategy_page():
+    return render_template("strategy.html", active_page="strategy")
 
 
 @app.get("/<path:filename>")

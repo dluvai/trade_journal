@@ -1,199 +1,47 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Felix Trade Journal — Live</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="dashboard-core.css">
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div>
-      <h1>Felix Trade Journal — Live</h1>
-      <div class="sub" id="subhead"></div>
-    </div>
-    <div class="controls">
-      <div class="segmented" id="yearFilter"></div>
-      <button class="btn-primary" id="addTradeBtn">+ Add trade</button>
-    </div>
-  </header>
-
-  <div class="ticker-strip" id="tickerStrip"></div>
-
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="overview">Overview</button>
-    <button class="tab-btn" data-tab="trades">Trades</button>
-    <button class="tab-btn" data-tab="pairs">Pairs</button>
-    <button class="tab-btn" data-tab="bias">Macros</button>
-    <button class="tab-btn" data-tab="strategy">Strategy</button>
-  </div>
-
-  <div class="tab-panel active" id="tab-overview">
-    <div class="tiles" id="tiles"></div>
-    <div class="panel">
-      <h2>Equity curve</h2>
-      <div id="equityChart"></div>
-    </div>
-    <div class="panel">
-      <h2>Win / Loss / Breakeven</h2>
-      <div id="donutChart"></div>
-    </div>
-    <div class="panel">
-      <h2>Win rate by day of week</h2>
-      <div id="dayChart"></div>
-    </div>
-    <div class="panel">
-      <h2>Win rate by session</h2>
-      <div id="sessionChart"></div>
-    </div>
-    <div class="panel">
-      <h2>Monthly return</h2>
-      <div id="monthChart"></div>
-    </div>
-    <div class="panel">
-      <h2>RR distribution</h2>
-      <div id="rrHistogram"></div>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-pairs">
-    <div id="bestWorstPairs"></div>
-    <div class="panel">
-      <h2>Performance by pair</h2>
-      <div id="pairTable"></div>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-trades">
-    <div class="form-actions" style="margin-bottom:14px;">
-      <button class="iconbtn" id="exportCsvBtnTrades">Export CSV</button>
-    </div>
-    <div id="bestWorstTrades"></div>
-    <div class="panel">
-      <h2>Trade calendar</h2>
-      <div id="calendarGrid"></div>
-    </div>
-    <div id="calendarDetails"></div>
-    <div class="panel">
-      <h2>Trades</h2>
-      <div class="table-scroll"><div id="tradesTable"></div></div>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-strategy">
-    <div class="panel">
-      <h2>Performance by strategy</h2>
-      <div id="strategyPerformance"></div>
-    </div>
-    <div class="panel">
-      <div class="form-actions" style="margin-bottom:16px;">
-        <button class="btn-primary" id="createStrategyBtn">+ Create Strategy</button>
-      </div>
-      <div id="strategiesList"></div>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-bias">
-    <div class="form-actions" style="margin-bottom:14px;">
-      <button class="iconbtn" id="exportCsvBtnBias">Export CSV</button>
-    </div>
-    <div class="panel" id="debtPanel" style="display:none;">
-      <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
-      <div id="debtContent"></div>
-    </div>
-    <div class="panel">
-      <h2>Fundamental bias check</h2>
-      <div class="form-grid" style="grid-template-columns: 1fr;">
-        <div class="field"><label>Pair</label><input type="text" id="biasPair" placeholder="EURUSD"></div>
-      </div>
-      <div class="form-actions">
-        <button class="btn-primary" id="checkFundamentalsBtn">Compare currencies</button>
-        <span id="biasError" style="color:var(--critical); font-size:12px;"></span>
-      </div>
-      <div id="fundamentalsResult" style="margin-top:16px;"></div>
-    </div>
-    <div class="panel">
-      <div class="workspace-head">
-        <h2 style="margin:0;">Macro workspace</h2>
-        <div class="form-actions">
-          <button class="btn-primary" id="saveMacroBtn">Save changes</button>
-          <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP and CPI for every currency, unemployment for USD/GBP/JPY/AUD/CAD, and trade balance for every currency except EUR. EUR also gets core CPI YoY. USD only gets core PPI/PCE (plus PCE MoM), nonfarm payrolls change, retail sales and current account -- no fresh free source found for those on other currencies. PMI always stays manual.">
-            <span class="spin-icon" id="syncSpinIcon">⟳</span> Sync
-          </button>
-          <span id="macroSaved" class="save-flash"></span>
-          <span id="fredSyncStatus" style="color:var(--text-muted); font-size:12px;"></span>
-        </div>
-      </div>
-      <div class="ccy-switcher segmented" id="ccySwitcher"></div>
-      <div id="macroWorkspace"></div>
-    </div>
-    <div class="panel">
-      <h2>Upcoming news</h2>
-      <div id="calendarStrip"></div>
-    </div>
-    <div class="panel">
-      <h2><span id="ccyNewsTitle">USD</span> news</h2>
-      <div id="ccyNewsNote" style="display:none; color:var(--text-muted); font-size:11.5px; margin:-6px 0 10px;">General forex news, ranked toward this currency -- Yahoo has no dedicated feed for it.</div>
-      <div class="news-panel-body" id="ccyNewsPanel"></div>
-    </div>
-  </div>
-
-  <footer id="footer"></footer>
+{% extends "base.html" %}
+{% block title %}Macros — Felix Trade Journal{% endblock %}
+{% block content %}
+<div class="panel" id="debtPanel" style="display:none;">
+  <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
+  <div id="debtContent"></div>
 </div>
-
-<div class="modal-backdrop hidden" id="modalBackdrop">
-  <div class="modal">
-    <h2 id="formTitle">Add trade</h2>
-    <form id="tradeForm">
-      <div class="form-grid">
-        <div class="field"><label>Date</label><input type="date" name="date" required></div>
-        <div class="field"><label>Session</label>
-          <select name="session">
-            <option value="London">London</option>
-            <option value="New York">New York</option>
-            <option value="Asia">Asia</option>
-          </select>
-        </div>
-        <div class="field"><label>Pair</label><input type="text" name="pair" placeholder="EURUSD" required></div>
-        <div class="field"><label>Direction</label>
-          <select name="direction"><option value="Long">Long</option><option value="Short">Short</option></select>
-        </div>
-      </div>
-      <div class="form-grid thirds">
-        <div class="field"><label>Risk %</label><input type="number" step="0.01" name="risk" placeholder="1.5"></div>
-        <div class="field"><label>RR</label><input type="number" step="0.01" name="rr" placeholder="2.0" required></div>
-        <div class="field"><label>PnL %</label><input type="number" step="0.01" name="pnl" placeholder="3.0" required></div>
-      </div>
-      <div class="empty" style="text-align:left; padding:0 0 12px; font-size:11.5px;">Result (WIN/LOSS/BE) is set automatically from RR: below 0 is a loss, 0 to 1 is breakeven, above 1 is a win.</div>
-      <div class="form-grid" style="grid-template-columns: 1fr;">
-        <div class="field"><label>Strategy</label>
-          <select name="strategy_id" id="tradeStrategySelect">
-            <option value="">No strategy</option>
-          </select>
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:12px;">
-        <label>Notes</label>
-        <textarea name="notes" rows="3" placeholder="What happened, why you took it, lessons..."></textarea>
-      </div>
-      <div class="form-grid thirds">
-        <div class="field"><label>Daily chart link</label><input type="url" name="chart_daily" placeholder="https://www.tradingview.com/x/..."></div>
-        <div class="field"><label>4H chart link</label><input type="url" name="chart_4h" placeholder="https://www.tradingview.com/x/..."></div>
-        <div class="field"><label>30M chart link</label><input type="url" name="chart_30m" placeholder="https://www.tradingview.com/x/..."></div>
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-primary">Save trade</button>
-        <button type="button" class="iconbtn" id="cancelForm">Cancel</button>
-        <span id="formError" style="color:var(--critical); font-size:12px;"></span>
-      </div>
-    </form>
+<div class="panel">
+  <h2>Fundamental bias check</h2>
+  <div class="form-grid" style="grid-template-columns: 1fr;">
+    <div class="field"><label>Pair</label><input type="text" id="biasPair" placeholder="EURUSD"></div>
   </div>
+  <div class="form-actions">
+    <button class="btn-primary" id="checkFundamentalsBtn">Compare currencies</button>
+    <span id="biasError" style="color:var(--critical); font-size:12px;"></span>
+  </div>
+  <div id="fundamentalsResult" style="margin-top:16px;"></div>
 </div>
-
+<div class="panel">
+  <div class="workspace-head">
+    <h2 style="margin:0;">Macro workspace</h2>
+    <div class="form-actions">
+      <button class="btn-primary" id="saveMacroBtn">Save changes</button>
+      <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP and CPI for every currency, unemployment for USD/GBP/JPY/AUD/CAD, and trade balance for every currency except EUR. EUR also gets core CPI YoY. USD only gets core PPI/PCE (plus PCE MoM), nonfarm payrolls change, retail sales and current account -- no fresh free source found for those on other currencies. PMI always stays manual.">
+        <span class="spin-icon" id="syncSpinIcon">⟳</span> Sync
+      </button>
+      <span id="macroSaved" class="save-flash"></span>
+      <span id="fredSyncStatus" style="color:var(--text-muted); font-size:12px;"></span>
+    </div>
+  </div>
+  <div class="ccy-switcher segmented" id="ccySwitcher"></div>
+  <div id="macroWorkspace"></div>
+</div>
+<div class="panel">
+  <h2>Upcoming news</h2>
+  <div id="calendarStrip"></div>
+</div>
+<div class="panel">
+  <h2><span id="ccyNewsTitle">USD</span> news</h2>
+  <div id="ccyNewsNote" style="display:none; color:var(--text-muted); font-size:11.5px; margin:-6px 0 10px;">General forex news, ranked toward this currency -- Yahoo has no dedicated feed for it.</div>
+  <div class="news-panel-body" id="ccyNewsPanel"></div>
+</div>
+{% endblock %}
+{% block modals %}
 <div class="modal-backdrop hidden" id="newsModalBackdrop">
   <div class="modal reflection-modal">
     <button type="button" class="modal-close-x" id="newsModalClose">&times;</button>
@@ -209,227 +57,9 @@
     </div>
   </div>
 </div>
-
-<div class="modal-backdrop hidden" id="strategyModalBackdrop">
-  <div class="modal">
-    <h2>Create strategy</h2>
-    <form id="strategyForm">
-      <div class="field" style="margin-bottom:12px;">
-        <label>Name</label>
-        <input type="text" name="name" placeholder="e.g. A-B0-B1-B2-C Liquidity Sweep" required>
-      </div>
-      <div class="field" style="margin-bottom:12px;">
-        <label>What you look for in the market</label>
-        <textarea name="description" rows="8" class="strategy-textarea" placeholder="Describe your setup: entry criteria, confirmation signals, risk rules, invalidation conditions..."></textarea>
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-primary">Save</button>
-        <button type="button" class="iconbtn" id="cancelStrategyForm">Cancel</button>
-        <span id="strategyFormError" style="color:var(--critical); font-size:12px;"></span>
-      </div>
-    </form>
-  </div>
-</div>
-
-<script src="dashboard-core.js"></script>
+{% endblock %}
+{% block scripts %}
 <script>
-let ALL_TRADES = [];
-let currentYear = 'all';
-let editingId = null;
-
-async function apiList() { const r = await fetch('/api/trades'); return r.json(); }
-async function apiSend(method, url, payload) {
-  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error || 'Request failed'); }
-  return r.json();
-}
-async function apiDelete(id) { await fetch(`/api/trades/${id}`, { method: 'DELETE' }); }
-
-function render() {
-  DC.renderAll(ALL_TRADES, currentYear, {
-    onYearChange: (y) => { currentYear = y; render(); },
-    onEdit: openEdit,
-    onDelete: onDelete,
-    subheadText: (n) => `${n} trades total`,
-    footerText: 'Felix Trade Journal',
-  });
-}
-
-async function refreshAndRender() {
-  ALL_TRADES = await apiList();
-  render();
-  renderStrategyPerformance();
-}
-
-// ---------- add/edit modal ----------
-
-const modalBackdrop = document.getElementById('modalBackdrop');
-const tradeForm = document.getElementById('tradeForm');
-const formError = document.getElementById('formError');
-
-function openAdd() {
-  editingId = null;
-  document.getElementById('formTitle').textContent = 'Add trade';
-  tradeForm.reset();
-  tradeForm.date.value = new Date().toISOString().slice(0, 10);
-  formError.textContent = '';
-  modalBackdrop.classList.remove('hidden');
-  tradeForm.pair.focus();
-}
-
-function openEdit(id) {
-  const t = ALL_TRADES.find(x => x.id === id);
-  if (!t) return;
-  editingId = id;
-  document.getElementById('formTitle').textContent = `Edit trade #${id} — ${t.date} ${t.pair || ''}`;
-  tradeForm.date.value = t.date;
-  tradeForm.session.value = t.session || 'London';
-  tradeForm.pair.value = t.pair || '';
-  tradeForm.direction.value = t.direction || 'Long';
-  tradeForm.risk.value = t.risk != null ? (t.risk * 100).toFixed(2) : '';
-  tradeForm.rr.value = t.rr;
-  tradeForm.pnl.value = (t.pnl * 100).toFixed(2);
-  tradeForm.strategy_id.value = t.strategy_id != null ? t.strategy_id : '';
-  tradeForm.notes.value = t.notes || '';
-  tradeForm.chart_daily.value = (t.charts.find(c => c.label === 'Daily') || {}).link || '';
-  tradeForm.chart_4h.value = (t.charts.find(c => c.label === '4H') || {}).link || '';
-  tradeForm.chart_30m.value = (t.charts.find(c => c.label === '30M') || {}).link || '';
-  formError.textContent = '';
-  modalBackdrop.classList.remove('hidden');
-}
-
-function closeForm() {
-  modalBackdrop.classList.add('hidden');
-  editingId = null;
-  tradeForm.reset();
-}
-
-document.getElementById('addTradeBtn').addEventListener('click', openAdd);
-document.getElementById('cancelForm').addEventListener('click', closeForm);
-modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeForm(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalBackdrop.classList.contains('hidden')) closeForm(); });
-
-tradeForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const fd = new FormData(tradeForm);
-  const num = (v) => (v === '' || v == null) ? null : parseFloat(v);
-  const payload = {
-    date: fd.get('date'),
-    session: fd.get('session'),
-    pair: fd.get('pair'),
-    direction: fd.get('direction'),
-    risk: num(fd.get('risk')) != null ? num(fd.get('risk')) / 100 : null,
-    rr: num(fd.get('rr')) || 0,
-    pnl: num(fd.get('pnl')) != null ? num(fd.get('pnl')) / 100 : 0,
-    strategy_id: fd.get('strategy_id') || null,
-    notes: fd.get('notes'),
-    chart_daily: fd.get('chart_daily') || null,
-    chart_4h: fd.get('chart_4h') || null,
-    chart_30m: fd.get('chart_30m') || null,
-  };
-  try {
-    if (editingId) await apiSend('PUT', `/api/trades/${editingId}`, payload);
-    else await apiSend('POST', '/api/trades', payload);
-    closeForm();
-    await refreshAndRender();
-  } catch (err) {
-    formError.textContent = err.message;
-  }
-});
-
-async function onDelete(id) {
-  if (!confirm('Delete this trade? This cannot be undone.')) return;
-  await apiDelete(id);
-  await refreshAndRender();
-}
-
-function exportCsvNow() {
-  DC.exportCsv(ALL_TRADES, `trade_journal_export_${new Date().toISOString().slice(0, 10)}.csv`);
-}
-document.getElementById('exportCsvBtnTrades').addEventListener('click', exportCsvNow);
-document.getElementById('exportCsvBtnBias').addEventListener('click', exportCsvNow);
-
-// ---------- strategy & macro snapshot ----------
-
-function flashSaved(id) {
-  const el = document.getElementById(id);
-  el.textContent = 'Saved.';
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 1800);
-}
-
-let ALL_STRATEGIES = [];
-
-async function loadStrategies() {
-  ALL_STRATEGIES = await (await fetch('/api/strategies')).json();
-  renderStrategiesList(ALL_STRATEGIES);
-  populateStrategySelect();
-  renderStrategyPerformance();
-}
-
-// Reuses the exact same grouping/rendering the Pairs tab uses for
-// performance-by-pair -- a strategy tag on a trade is just another grouping
-// key, same as pair/day/session already are, so there's no new computation
-// to write here, just a new key to group by.
-function renderStrategyPerformance() {
-  const groups = DC.computeGroupStats(ALL_TRADES, 'strategy_name');
-  const shaped = groups.map(g => ({ pair: g.key, total: g.total, wins: g.wins, pnl: g.pnl }));
-  DC.renderPairTable('strategyPerformance', shaped, 'Strategy');
-}
-
-function populateStrategySelect() {
-  const select = document.getElementById('tradeStrategySelect');
-  const current = select.value;
-  select.innerHTML = '<option value="">No strategy</option>' +
-    ALL_STRATEGIES.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-  select.value = current; // preserve selection if this runs while the form is open
-}
-
-function renderStrategiesList(list) {
-  const host = document.getElementById('strategiesList');
-  if (!list.length) { host.innerHTML = '<div class="empty">No strategies yet — click "+ Create Strategy" to add one.</div>'; return; }
-  host.innerHTML = [...list].reverse().map(s => `
-    <div class="panel" style="margin-bottom:12px;">
-      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
-        <h2 style="margin:0;">${s.name}</h2>
-        <button class="iconbtn small danger" data-delete-strategy="${s.id}">Delete</button>
-      </div>
-      <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.65; white-space:pre-wrap; margin-top:10px;">${s.description || '<em>No details written.</em>'}</div>
-    </div>`).join('');
-  host.querySelectorAll('[data-delete-strategy]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this strategy?')) return;
-      await apiSend('DELETE', `/api/strategies/${btn.dataset.deleteStrategy}`, {});
-      loadStrategies();
-    });
-  });
-}
-
-const strategyModalBackdrop = document.getElementById('strategyModalBackdrop');
-const strategyForm = document.getElementById('strategyForm');
-const strategyFormError = document.getElementById('strategyFormError');
-
-document.getElementById('createStrategyBtn').addEventListener('click', () => {
-  strategyForm.reset();
-  strategyFormError.textContent = '';
-  strategyModalBackdrop.classList.remove('hidden');
-});
-document.getElementById('cancelStrategyForm').addEventListener('click', () => strategyModalBackdrop.classList.add('hidden'));
-strategyModalBackdrop.addEventListener('click', (e) => { if (e.target === strategyModalBackdrop) strategyModalBackdrop.classList.add('hidden'); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !strategyModalBackdrop.classList.contains('hidden')) strategyModalBackdrop.classList.add('hidden'); });
-
-strategyForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const fd = new FormData(strategyForm);
-  try {
-    await apiSend('POST', '/api/strategies', { name: fd.get('name'), description: fd.get('description') });
-    strategyModalBackdrop.classList.add('hidden');
-    loadStrategies();
-  } catch (err) {
-    strategyFormError.textContent = err.message;
-  }
-});
-
 const CCY_ORDER = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD'];
 // Standard FX market quoting hierarchy -- whichever currency comes first here
 // is always the base when paired with anything later in the list (this is
@@ -700,7 +330,10 @@ function renderCalendarStrip() {
 // single sync right at release time would often still show the old print.
 // Only events with a verified time_utc participate (not JPY -- see
 // rate_calendar.py); the Sync button stays as a manual fallback for those
-// and for anything this misses.
+// and for anything this misses. A server-side background thread
+// (auto_sync.py) independently covers the case where nobody has this page
+// open at all -- this client-side poller is a supplementary "while you're
+// looking at it" refresh, only active on this page.
 const ACTIVE_AUTO_POLLS = new Set();
 
 function eventKey(e) { return `${e.date}|${e.currency}|${e.label}`; }
@@ -712,7 +345,7 @@ function startAutoSyncPoll(key, ccy) {
   const poll = async () => {
     attempts++;
     try {
-      await apiSend('POST', '/api/macro/sync', {});
+      await DC.apiSend('POST', '/api/macro/sync', {});
       await loadMacro();
     } catch (e) { /* transient network hiccup -- next minute retries */ }
     const after = JSON.stringify((LATEST_MACRO_ROWS.find(r => r.currency === ccy) || {}));
@@ -752,8 +385,9 @@ async function loadReleaseCalendar() {
   renderMacroWorkspace(LATEST_MACRO_ROWS);
 }
 
-// Policy-rate decision dates -- USD/EUR/GBP/JPY/AUD only (see rate_calendar.py
-// for why NZD/CHF aren't included: their sites couldn't be verified by hand).
+// Policy-rate decision dates -- USD/EUR/GBP/JPY/AUD/CAD only (see
+// rate_calendar.py for why NZD/CHF aren't included: their sites couldn't be
+// verified by hand).
 async function loadRateCalendar() {
   try {
     RATE_CALENDAR = await (await fetch('/api/rate-calendar')).json();
@@ -812,7 +446,7 @@ document.getElementById('syncFredBtn').addEventListener('click', async () => {
   spinIcon.classList.add('spinning');
   statusEl.textContent = 'Syncing…';
   try {
-    await apiSend('POST', '/api/macro/sync', {});
+    await DC.apiSend('POST', '/api/macro/sync', {});
     statusEl.textContent = 'Synced.';
     setTimeout(() => { statusEl.textContent = ''; }, 2500);
     await loadMacro();
@@ -829,8 +463,11 @@ document.getElementById('saveMacroBtn').addEventListener('click', async () => {
   document.querySelectorAll('#macroWorkspace .macro-input').forEach(inp => {
     fields[inp.dataset.field] = inp.value === '' ? null : parseFloat(inp.value);
   });
-  await apiSend('PUT', `/api/macro/${selectedCcy}`, fields);
-  flashSaved('macroSaved');
+  await DC.apiSend('PUT', `/api/macro/${selectedCcy}`, fields);
+  const el = document.getElementById('macroSaved');
+  el.textContent = 'Saved.';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1800);
   loadMacro();
 });
 
@@ -876,65 +513,7 @@ async function loadFundamentals() {
 document.getElementById('checkFundamentalsBtn').addEventListener('click', loadFundamentals);
 document.getElementById('biasPair').addEventListener('change', loadFundamentals);
 
-// ---------- live price ticker & market news (own data, own styling -- see market_data.py) ----------
-
-function fmtPrice(v) {
-  if (v == null) return '—';
-  const decimals = v >= 100 ? 2 : (v >= 10 ? 3 : 4);
-  return v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-}
-
-function tickerChangeParts(q) {
-  const cls = q.changePct == null ? 'flat' : (q.changePct > 0 ? 'good' : (q.changePct < 0 ? 'critical' : 'flat'));
-  const arrow = q.changePct > 0 ? '▲' : (q.changePct < 0 ? '▼' : '·');
-  const pct = q.changePct == null ? '—' : `${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%`;
-  return { cls, text: `${arrow} ${pct}` };
-}
-
-function tickerItemHtml(q) {
-  const { cls, text } = tickerChangeParts(q);
-  return `<div class="ticker-item" data-symbol="${q.symbol}">
-    <span class="ti-label">${q.label}</span>
-    <span class="ti-price">${fmtPrice(q.price)}</span>
-    <span class="ti-change ${cls}">${text}</span>
-  </div>`;
-}
-
-// The strip scrolls via a single continuous CSS animation on .ticker-track
-// (see .ticker-strip:hover pausing it in dashboard-core.css). Replacing that
-// element's innerHTML on every refresh would restart the animation from 0%
-// every time -- a visible stutter every 20s. So after the first paint, later
-// refreshes patch each item's text in place and never touch .ticker-track
-// itself, keeping the scroll running with zero interruption.
-async function loadTicker() {
-  const host = document.getElementById('tickerStrip');
-  let quotes;
-  try {
-    quotes = await (await fetch('/api/prices')).json();
-  } catch (e) {
-    if (!host.querySelector('.ticker-track')) {
-      host.innerHTML = '<div class="ticker-item ti-label">Live prices unavailable right now</div>';
-    }
-    return; // a transient failure keeps whatever was already scrolling, rather than wiping it
-  }
-
-  if (!host.querySelector('.ticker-track')) {
-    const itemsHtml = quotes.map(tickerItemHtml).join('');
-    // duplicated back-to-back so the loop has no visible seam
-    host.innerHTML = `<div class="ticker-track">${itemsHtml}${itemsHtml}</div>`;
-    return;
-  }
-
-  quotes.forEach(q => {
-    const { cls, text } = tickerChangeParts(q);
-    host.querySelectorAll(`.ticker-item[data-symbol="${q.symbol}"]`).forEach(el => {
-      el.querySelector('.ti-price').textContent = fmtPrice(q.price);
-      const changeEl = el.querySelector('.ti-change');
-      changeEl.textContent = text;
-      changeEl.className = `ti-change ${cls}`;
-    });
-  });
-}
+// ---------- market news (own data, own styling -- see market_data.py) ----------
 
 function timeAgo(unixSeconds) {
   const diff = Math.max(0, Date.now() / 1000 - unixSeconds);
@@ -983,8 +562,8 @@ document.getElementById('newsModalClose').addEventListener('click', () => newsMo
 newsModalBackdrop.addEventListener('click', (e) => { if (e.target === newsModalBackdrop) newsModalBackdrop.classList.add('hidden'); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !newsModalBackdrop.classList.contains('hidden')) newsModalBackdrop.classList.add('hidden'); });
 
-// Bias Check's news panel follows whichever currency is selected -- EUR/GBP/AUD/NZD
-// get a real currency-specific feed; USD/JPY/CHF/CAD share one combined majors
+// News panel follows whichever currency is selected -- EUR/GBP/AUD/NZD get
+// a real currency-specific feed; USD/JPY/CHF/CAD share one combined majors
 // feed server-side, re-ranked toward that currency's own keywords (see
 // market_data.py -- no working per-currency query exists for those four).
 const SHARED_FEED_CCYS = ['USD', 'JPY', 'CHF', 'CAD'];
@@ -1000,21 +579,15 @@ async function loadCcyNews() {
   }
 }
 
-DC.setupTabs();
 (async function init() {
-  await refreshAndRender();
-  loadStrategies();
   await loadMacro();
   loadReleaseCalendar();
   loadRateCalendar();
   loadCalendarStrip();
   loadDebtSnapshot();
   loadCcyNews();
-  loadTicker();
-  setInterval(loadTicker, 3000);
   setInterval(loadCcyNews, 60000);
   setInterval(loadCalendarStrip, 5 * 60000);
 })();
 </script>
-</body>
-</html>
+{% endblock %}

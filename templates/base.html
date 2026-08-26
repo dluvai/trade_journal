@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Felix Trade Journal{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/dashboard-core.css">
+</head>
+<body>
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+    <span>Felix Trade Journal</span>
+  </div>
+  <div class="sidebar-nav">
+    {% for item in nav_items %}
+    <a class="nav-item {{ 'active' if item.key == active_page else '' }}" href="{{ url_for(item.endpoint) }}" aria-label="{{ item.label }}">
+      {% if item.key == 'overview' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
+      {% elif item.key == 'trades' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h13M13 3l4 4-4 4"/><path d="M21 17H8m5 4l-4-4 4-4"/></svg>
+      {% elif item.key == 'pairs' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4.5"/><circle cx="16" cy="12" r="4.5"/></svg>
+      {% elif item.key == 'macros' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/></svg>
+      {% elif item.key == 'strategy' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
+      {% endif %}
+      <span>{{ item.label }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="sidebar-pin">
+    <button type="button" id="sidebarPinBtn" title="Pin sidebar open">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l1 6 3 2v2H5v-2l3-2z"/></svg>
+      <span>Pin sidebar</span>
+    </button>
+  </div>
+</nav>
+<script>
+  // Applied synchronously, before the rest of the page paints, so a pinned
+  // sidebar doesn't visibly flash collapsed-then-expand on every navigation.
+  (function () {
+    if (localStorage.getItem('sidebarPinned') === 'true') {
+      document.getElementById('sidebar').classList.add('pinned');
+      document.body.classList.add('sidebar-pinned');
+    }
+  })();
+</script>
+
+<div class="page-shell">
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Felix Trade Journal</h1>
+        <div class="sub" id="subhead"></div>
+      </div>
+      <div class="controls">
+        {% block header_controls %}{% endblock %}
+        <button class="btn-primary" id="addTradeBtn">+ Add trade</button>
+      </div>
+    </header>
+
+    <div class="ticker-strip" id="tickerStrip"></div>
+
+    {% block content %}{% endblock %}
+
+    <footer>Felix Trade Journal</footer>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="modalBackdrop">
+  <div class="modal">
+    <h2 id="formTitle">Add trade</h2>
+    <form id="tradeForm">
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input type="date" name="date" required></div>
+        <div class="field"><label>Session</label>
+          <select name="session">
+            <option value="London">London</option>
+            <option value="New York">New York</option>
+            <option value="Asia">Asia</option>
+          </select>
+        </div>
+        <div class="field"><label>Pair</label><input type="text" name="pair" placeholder="EURUSD" required></div>
+        <div class="field"><label>Direction</label>
+          <select name="direction"><option value="Long">Long</option><option value="Short">Short</option></select>
+        </div>
+      </div>
+      <div class="form-grid thirds">
+        <div class="field"><label>Risk %</label><input type="number" step="0.01" name="risk" placeholder="1.5"></div>
+        <div class="field"><label>RR</label><input type="number" step="0.01" name="rr" placeholder="2.0" required></div>
+        <div class="field"><label>PnL %</label><input type="number" step="0.01" name="pnl" placeholder="3.0" required></div>
+      </div>
+      <div class="empty" style="text-align:left; padding:0 0 12px; font-size:11.5px;">Result (WIN/LOSS/BE) is set automatically from RR: below 0 is a loss, 0 to 1 is breakeven, above 1 is a win.</div>
+      <div class="form-grid" style="grid-template-columns: 1fr;">
+        <div class="field"><label>Strategy</label>
+          <select name="strategy_id" id="tradeStrategySelect">
+            <option value="">No strategy</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Notes</label>
+        <textarea name="notes" rows="3" placeholder="What happened, why you took it, lessons..."></textarea>
+      </div>
+      <div class="form-grid thirds">
+        <div class="field"><label>Daily chart link</label><input type="url" name="chart_daily" placeholder="https://www.tradingview.com/x/..."></div>
+        <div class="field"><label>4H chart link</label><input type="url" name="chart_4h" placeholder="https://www.tradingview.com/x/..."></div>
+        <div class="field"><label>30M chart link</label><input type="url" name="chart_30m" placeholder="https://www.tradingview.com/x/..."></div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Save trade</button>
+        <button type="button" class="iconbtn" id="cancelForm">Cancel</button>
+        <span id="formError" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% block modals %}{% endblock %}
+
+<script src="/dashboard-core.js"></script>
+<script>
+  DC.initSidebar();
+  DC.initTicker();
+  DC.initTradeModal();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

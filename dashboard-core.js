@@ -162,6 +162,8 @@ const DC = (function () {
   // ---------- rendering: tiles / equity / donut ----------
 
   function renderTiles(hostId, stats, drawdown) {
+    const host0 = document.getElementById(hostId);
+    if (!host0) return;
     const pf = isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞';
     const tiles = [
       { label: 'Total trades', value: stats.total },
@@ -182,13 +184,14 @@ const DC = (function () {
         cls: drawdown.recovered ? 'good' : 'critical',
       });
     }
-    document.getElementById(hostId).innerHTML = tiles.map(t => `
+    host0.innerHTML = tiles.map(t => `
       <div class="tile"><div class="label">${t.label}</div><div class="value ${t.cls || ''}">${t.value}</div></div>
     `).join('');
   }
 
   function renderEquity(hostId, points, drawdown) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     if (!points.length) { host.innerHTML = '<div class="empty">No trades in this range.</div>'; return; }
     const W = 1000, H = 280, PAD_L = 46, PAD_R = 10, PAD_T = 14, PAD_B = 26;
     const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
@@ -276,6 +279,7 @@ const DC = (function () {
 
   function renderDonut(hostId, stats) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     const total = stats.total || 0;
     const R = 40, CX = 50, CY = 50, SW = 14;
     const circumference = 2 * Math.PI * R;
@@ -326,6 +330,7 @@ const DC = (function () {
 
   function renderWinRateBars(hostId, groups) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     if (!groups.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const CH = 180;
     const cols = groups.map(g => {
@@ -357,6 +362,7 @@ const DC = (function () {
 
   function renderMonthHeatmap(hostId, trades) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     const map = computeMonthGrid(trades);
     if (!map.size) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const years = [...new Set([...map.keys()].map(k => k.slice(0, 4)))].sort().reverse();
@@ -397,6 +403,7 @@ const DC = (function () {
 
   function renderBestWorstPairs(hostId, bw) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     if (!bw) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const cards = [
       { label: 'Best pair', title: bw.bestPair.pair, sub: `${bw.bestPair.total} trades · ${(bw.bestPair.wins / bw.bestPair.total * 100).toFixed(0)}% win rate`, value: fmtPct(bw.bestPair.pnl, 2), good: bw.bestPair.pnl >= 0 },
@@ -407,6 +414,7 @@ const DC = (function () {
 
   function renderBestWorstTrades(hostId, bw) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     if (!bw) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const cards = [
       { label: 'Best trade', title: bw.bestTrade.pair || '—', sub: `${bw.bestTrade.date} · ${bw.bestTrade.session || ''} · ${bw.bestTrade.direction || ''}`, value: fmtPct(bw.bestTrade.pnl, 2), good: bw.bestTrade.pnl >= 0 },
@@ -488,6 +496,7 @@ const DC = (function () {
 
   function renderPairTable(hostId, pairs, labelHeader) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     if (!pairs.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const rows = pairs.map(p => {
       const wr = p.total ? p.wins / p.total : 0;
@@ -512,6 +521,7 @@ const DC = (function () {
   function renderTradesTable(hostId, trades, hooks) {
     hooks = hooks || {};
     const host = document.getElementById(hostId);
+    if (!host) return;
     if (!trades.length) { host.innerHTML = '<div class="empty">No trades in this range.</div>'; return; }
     const ordered = [...trades].reverse();
     const canExpand = !!(hooks.onEdit || hooks.onDelete);
@@ -572,6 +582,7 @@ const DC = (function () {
 
   function renderRRHistogram(hostId, trades) {
     const host = document.getElementById(hostId);
+    if (!host) return;
     if (!trades.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const buckets = RR_BUCKETS.map(b => ({ ...b, list: trades.filter(t => b.test(t.rr)) }));
     const maxCount = Math.max(1, ...buckets.map(b => b.list.length));
@@ -608,6 +619,7 @@ const DC = (function () {
   function renderCalendar(gridId, detailsId, allTrades, hooks, accountBalance) {
     const host = document.getElementById(gridId);
     const detailsHost = document.getElementById(detailsId);
+    if (!host || !detailsHost) return;
     if (!allTrades.length) { host.innerHTML = '<div class="empty">No trades yet.</div>'; detailsHost.innerHTML = ''; return; }
 
     const byDate = new Map();
@@ -709,6 +721,7 @@ const DC = (function () {
 
   function renderYearFilter(hostId, allTrades, currentYear, onChange) {
     const el = document.getElementById(hostId);
+    if (!el) return;
     const years = [...new Set(allTrades.map(t => t.year).filter(Boolean))].sort();
     const options = ['all', ...years];
     el.innerHTML = options.map(y => `<button data-y="${y}" class="${y === currentYear ? 'active' : ''}">${y === 'all' ? 'All years' : y}</button>`).join('');
@@ -748,12 +761,221 @@ const DC = (function () {
     renderPairTable('pairTable', computeByPair(trades));
     renderTradesTable('tradesTable', trades, { onEdit: opts.onEdit, onDelete: opts.onDelete });
 
-    if (opts.subheadText) document.getElementById('subhead').textContent = opts.subheadText(allTrades.length);
-    if (opts.footerText) document.getElementById('footer').textContent = opts.footerText;
+    if (opts.subheadText) {
+      const subhead = document.getElementById('subhead');
+      if (subhead) subhead.textContent = opts.subheadText(allTrades.length);
+    }
+    if (opts.footerText) {
+      const footer = document.getElementById('footer');
+      if (footer) footer.textContent = opts.footerText;
+    }
+  }
+
+  // ---------- shared page utilities (multi-page live app) ----------
+
+  async function apiSend(method, url, payload) {
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error || 'Request failed'); }
+    return r.json();
+  }
+
+  async function fetchTrades() { const r = await fetch('/api/trades'); return r.json(); }
+  async function fetchStrategies() { const r = await fetch('/api/strategies'); return r.json(); }
+  async function deleteTrade(id) { await fetch(`/api/trades/${id}`, { method: 'DELETE' }); }
+
+  // ---------- live price ticker (global chrome, present on every page) ----------
+
+  function fmtPrice(v) {
+    if (v == null) return '—';
+    const decimals = v >= 100 ? 2 : (v >= 10 ? 3 : 4);
+    return v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  }
+
+  function tickerChangeParts(q) {
+    const cls = q.changePct == null ? 'flat' : (q.changePct > 0 ? 'good' : (q.changePct < 0 ? 'critical' : 'flat'));
+    const arrow = q.changePct > 0 ? '▲' : (q.changePct < 0 ? '▼' : '·');
+    const pct = q.changePct == null ? '—' : `${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%`;
+    return { cls, text: `${arrow} ${pct}` };
+  }
+
+  function tickerItemHtml(q) {
+    const { cls, text } = tickerChangeParts(q);
+    return `<div class="ticker-item" data-symbol="${q.symbol}">
+      <span class="ti-label">${q.label}</span>
+      <span class="ti-price">${fmtPrice(q.price)}</span>
+      <span class="ti-change ${cls}">${text}</span>
+    </div>`;
+  }
+
+  // The strip scrolls via a single continuous CSS animation on .ticker-track
+  // (see .ticker-strip:hover pausing it in dashboard-core.css). Replacing that
+  // element's innerHTML on every refresh would restart the animation from 0%
+  // every time -- a visible stutter every 20s. So after the first paint, later
+  // refreshes patch each item's text in place and never touch .ticker-track
+  // itself, keeping the scroll running with zero interruption.
+  async function loadTicker() {
+    const host = document.getElementById('tickerStrip');
+    if (!host) return;
+    let quotes;
+    try {
+      quotes = await (await fetch('/api/prices')).json();
+    } catch (e) {
+      if (!host.querySelector('.ticker-track')) {
+        host.innerHTML = '<div class="ticker-item ti-label">Live prices unavailable right now</div>';
+      }
+      return; // a transient failure keeps whatever was already scrolling, rather than wiping it
+    }
+
+    if (!host.querySelector('.ticker-track')) {
+      const itemsHtml = quotes.map(tickerItemHtml).join('');
+      // duplicated back-to-back so the loop has no visible seam
+      host.innerHTML = `<div class="ticker-track">${itemsHtml}${itemsHtml}</div>`;
+      return;
+    }
+
+    quotes.forEach(q => {
+      const { cls, text } = tickerChangeParts(q);
+      host.querySelectorAll(`.ticker-item[data-symbol="${q.symbol}"]`).forEach(el => {
+        el.querySelector('.ti-price').textContent = fmtPrice(q.price);
+        const changeEl = el.querySelector('.ti-change');
+        changeEl.textContent = text;
+        changeEl.className = `ti-change ${cls}`;
+      });
+    });
+  }
+
+  function initTicker() {
+    if (!document.getElementById('tickerStrip')) return;
+    loadTicker();
+    setInterval(loadTicker, 3000);
+  }
+
+  // ---------- global add/edit trade modal (global chrome, present on every page) ----------
+
+  let tradeModalState = null; // { editingId } once initialized
+
+  // Exposed so a page's own script can look a trade up by id (from its own
+  // locally-fetched ALL_TRADES) and hand the full object to this shared modal --
+  // decouples the modal from any one page owning the trades array.
+  function openEditTradeModal(trade) {
+    if (!tradeModalState) return;
+    const tradeForm = document.getElementById('tradeForm');
+    tradeModalState.editingId = trade.id;
+    document.getElementById('formTitle').textContent = `Edit trade #${trade.id} — ${trade.date} ${trade.pair || ''}`;
+    tradeForm.date.value = trade.date;
+    tradeForm.session.value = trade.session || 'London';
+    tradeForm.pair.value = trade.pair || '';
+    tradeForm.direction.value = trade.direction || 'Long';
+    tradeForm.risk.value = trade.risk != null ? (trade.risk * 100).toFixed(2) : '';
+    tradeForm.rr.value = trade.rr;
+    tradeForm.pnl.value = (trade.pnl * 100).toFixed(2);
+    tradeForm.strategy_id.value = trade.strategy_id != null ? trade.strategy_id : '';
+    tradeForm.notes.value = trade.notes || '';
+    tradeForm.chart_daily.value = (trade.charts.find(c => c.label === 'Daily') || {}).link || '';
+    tradeForm.chart_4h.value = (trade.charts.find(c => c.label === '4H') || {}).link || '';
+    tradeForm.chart_30m.value = (trade.charts.find(c => c.label === '30M') || {}).link || '';
+    document.getElementById('formError').textContent = '';
+    document.getElementById('modalBackdrop').classList.remove('hidden');
+  }
+
+  function openAddTradeModal() {
+    if (!tradeModalState) return;
+    tradeModalState.editingId = null;
+    const tradeForm = document.getElementById('tradeForm');
+    document.getElementById('formTitle').textContent = 'Add trade';
+    tradeForm.reset();
+    tradeForm.date.value = new Date().toISOString().slice(0, 10);
+    document.getElementById('formError').textContent = '';
+    document.getElementById('modalBackdrop').classList.remove('hidden');
+    tradeForm.pair.focus();
+  }
+
+  // Wires the global Add/Edit Trade modal (present in base.html on every
+  // page). Populates the strategy dropdown itself so no page needs to fetch
+  // strategies just to support the modal. On save, reloads the current page
+  // rather than trying to maintain a cross-page re-render contract -- a
+  // deliberate simplification now that navigation is real page loads.
+  function initTradeModal() {
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    if (!modalBackdrop) return;
+    tradeModalState = { editingId: null };
+    const tradeForm = document.getElementById('tradeForm');
+    const formError = document.getElementById('formError');
+
+    fetchStrategies().then(strategies => {
+      const select = document.getElementById('tradeStrategySelect');
+      select.innerHTML = '<option value="">No strategy</option>' +
+        strategies.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    }).catch(() => {});
+
+    function closeForm() {
+      modalBackdrop.classList.add('hidden');
+      tradeModalState.editingId = null;
+      tradeForm.reset();
+    }
+
+    const addBtn = document.getElementById('addTradeBtn');
+    if (addBtn) addBtn.addEventListener('click', openAddTradeModal);
+    document.getElementById('cancelForm').addEventListener('click', closeForm);
+    modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeForm(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modalBackdrop.classList.contains('hidden')) closeForm(); });
+
+    tradeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(tradeForm);
+      const num = (v) => (v === '' || v == null) ? null : parseFloat(v);
+      const payload = {
+        date: fd.get('date'),
+        session: fd.get('session'),
+        pair: fd.get('pair'),
+        direction: fd.get('direction'),
+        risk: num(fd.get('risk')) != null ? num(fd.get('risk')) / 100 : null,
+        rr: num(fd.get('rr')) || 0,
+        pnl: num(fd.get('pnl')) != null ? num(fd.get('pnl')) / 100 : 0,
+        strategy_id: fd.get('strategy_id') || null,
+        notes: fd.get('notes'),
+        chart_daily: fd.get('chart_daily') || null,
+        chart_4h: fd.get('chart_4h') || null,
+        chart_30m: fd.get('chart_30m') || null,
+      };
+      try {
+        if (tradeModalState.editingId) await apiSend('PUT', `/api/trades/${tradeModalState.editingId}`, payload);
+        else await apiSend('POST', '/api/trades', payload);
+        window.location.reload();
+      } catch (err) {
+        formError.textContent = err.message;
+      }
+    });
+  }
+
+  // ---------- sidebar (hover-to-reveal, pinnable, present on every page) ----------
+
+  function initSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const pinBtn = document.getElementById('sidebarPinBtn');
+
+    function applyPinned(pinned) {
+      sidebar.classList.toggle('pinned', pinned);
+      document.body.classList.toggle('sidebar-pinned', pinned);
+      if (pinBtn) pinBtn.classList.toggle('active', pinned);
+    }
+
+    applyPinned(localStorage.getItem('sidebarPinned') === 'true');
+
+    if (pinBtn) {
+      pinBtn.addEventListener('click', () => {
+        const pinned = !sidebar.classList.contains('pinned');
+        applyPinned(pinned);
+        localStorage.setItem('sidebarPinned', pinned ? 'true' : 'false');
+      });
+    }
   }
 
   return {
     fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
+    apiSend, fetchTrades, fetchStrategies, deleteTrade,
+    initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initSidebar,
   };
 })();
