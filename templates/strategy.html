@@ -72,7 +72,6 @@ async function loadStrategies() {
   ALL_STRATEGIES = await DC.fetchStrategies();
   renderStrategiesList(ALL_STRATEGIES);
   renderStrategyPerformance();
-  document.getElementById('subhead').textContent = `${ALL_STRATEGIES.length} strategies`;
 }
 
 const strategyModalBackdrop = document.getElementById('strategyModalBackdrop');

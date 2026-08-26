@@ -42,7 +42,6 @@ let currentYear = 'all';
 function render() {
   DC.renderAll(ALL_TRADES, currentYear, {
     onYearChange: (y) => { currentYear = y; render(); },
-    subheadText: (n) => `${n} trades total`,
   });
 }
 
