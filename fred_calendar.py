@@ -20,6 +20,14 @@ out on purpose:
 Release IDs verified by hand against https://fred.stlouisfed.org/release?rid=<id>:
   CPI & core CPI = 10, core PPI = 46, core PCE = 54, unemployment = 50,
   retail sales = 9, trade balance = 51, current account = 49, GDP = 53.
+
+FRED's release-dates API only returns a date, never a time of day -- but
+every one of these releases comes from BLS, BEA, or the Census Bureau, and
+all three agencies publish on a fixed, publicly documented schedule: 8:30 AM
+Eastern Time, every time, no exceptions (bls.gov/bls/newsrels.htm and
+bea.gov's own release schedules both state this explicitly). That's a real,
+verifiable institutional convention, not a guess, so it's safe to attach a
+time_utc to each event using it.
 """
 import json
 import os
@@ -27,8 +35,10 @@ import time
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 API_BASE = "https://api.stlouisfed.org/fred/release/dates"
+RELEASE_TIME_ET = (8, 30)
 
 METRIC_RELEASE_IDS = {
     "cpi_yoy": 10,
@@ -75,6 +85,12 @@ def _fetch_release_dates(release_id, api_key, limit=1):
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     return [d["date"] for d in data.get("release_dates", [])]
+
+
+def _time_utc_for(d_obj):
+    hour, minute = RELEASE_TIME_ET
+    local = datetime(d_obj.year, d_obj.month, d_obj.day, hour, minute, tzinfo=ZoneInfo("America/New_York"))
+    return local.astimezone(ZoneInfo("UTC")).isoformat()
 
 
 def next_release_dates():
@@ -128,7 +144,7 @@ def upcoming_events(days_ahead=14):
         for d in dates:
             d_obj = datetime.strptime(d, "%Y-%m-%d").date()
             if today <= d_obj <= cutoff:
-                events.append({"date": d, "currency": "USD", "label": label})
+                events.append({"date": d, "currency": "USD", "label": label, "time_utc": _time_utc_for(d_obj)})
 
     _cache["upcoming"] = (time.time(), events)
     return events

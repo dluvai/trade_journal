@@ -540,9 +540,15 @@ function categoryCardHtml(row, group, ccy) {
 }
 
 // One-line summary of which watched metrics moved since their last reading,
-// for a quick scan before diving into the individual cards below.
+// for a quick scan before diving into the individual cards below. Scoped to
+// policy rate, inflation and unemployment on purpose -- these are the
+// metrics that actually move FX bias day to day; GDP/PMI/trade balance move
+// too slowly, and retail sales/current account are noisy, to be worth a
+// glance-level signal.
+const QUICK_SIGNAL_KEYS = ['interest_rate', 'cpi_yoy', 'cpi_mom', 'core_cpi_yoy', 'core_ppi_yoy', 'core_pce_yoy', 'core_pce_mom', 'unemployment'];
+
 function quickSignalsHtml(row) {
-  const parts = METRIC_META.map(meta => {
+  const parts = METRIC_META.filter(meta => QUICK_SIGNAL_KEYS.includes(meta.key)).map(meta => {
     const v = row[meta.key], prev = row['prev_' + meta.key];
     if (v == null || prev == null || v === prev) return null;
     const arrow = v > prev ? '▲' : '▼';
@@ -630,6 +636,17 @@ async function loadCalendarStrip() {
   renderCalendarStrip();
 }
 
+// Countdown text for an event's exact time_utc -- null (JPY, or any date
+// with no verified time) just shows nothing rather than a fake time.
+function countdownLabel(timeUtc) {
+  if (!timeUtc) return null;
+  const diffMs = new Date(timeUtc).getTime() - Date.now();
+  const mins = Math.round(diffMs / 60000);
+  if (mins > 5) return null;
+  if (diffMs <= 0) return mins > -60 ? 'Just released' : null;
+  return `in ${mins}m`;
+}
+
 // Filters the already-fetched events by whichever currency is selected in
 // the switcher -- no new network request needed, the full fortnight's
 // events are small enough to just fetch once and filter client-side.
@@ -641,17 +658,73 @@ function renderCalendarStrip() {
     host.innerHTML = `<div class="empty">Nothing scheduled for ${selectedCcy} in the next two weeks (or FRED_API_KEY isn't set, so only rate decisions would show).</div>`;
     return;
   }
-  const rows = events.map(e => `
+  const rows = events.map(e => {
+    const timeText = e.time_utc
+      ? new Date(e.time_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '—';
+    const countdown = countdownLabel(e.time_utc);
+    return `
     <tr>
       <td class="strong" style="font-family:var(--font-mono);">${e.date}</td>
+      <td style="font-family:var(--font-mono);">${timeText}</td>
       <td>${e.currency}</td>
       <td>${e.label}</td>
-    </tr>`).join('');
+      <td>${countdown ? `<span class="badge WIN">${countdown}</span>` : ''}</td>
+    </tr>`;
+  }).join('');
   host.innerHTML = `<table>
-    <thead><tr><th>Date</th><th>Currency</th><th>Event</th></tr></thead>
+    <thead><tr><th>Date</th><th>Time (local)</th><th>Currency</th><th>Event</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
+
+// Once a calendar event's exact time passes, automatically re-syncs FRED
+// every minute (instead of requiring the manual Sync button) until the
+// currency's data actually updates or 45 minutes go by -- FRED usually
+// reflects a fresh government release within minutes, not instantly, so a
+// single sync right at release time would often still show the old print.
+// Only events with a verified time_utc participate (not JPY -- see
+// rate_calendar.py); the Sync button stays as a manual fallback for those
+// and for anything this misses.
+const ACTIVE_AUTO_POLLS = new Set();
+
+function eventKey(e) { return `${e.date}|${e.currency}|${e.label}`; }
+
+function startAutoSyncPoll(key, ccy) {
+  ACTIVE_AUTO_POLLS.add(key);
+  let attempts = 0;
+  const before = JSON.stringify((LATEST_MACRO_ROWS.find(r => r.currency === ccy) || {}));
+  const poll = async () => {
+    attempts++;
+    try {
+      await apiSend('POST', '/api/macro/sync', {});
+      await loadMacro();
+    } catch (e) { /* transient network hiccup -- next minute retries */ }
+    const after = JSON.stringify((LATEST_MACRO_ROWS.find(r => r.currency === ccy) || {}));
+    if (after !== before || attempts >= 45) {
+      ACTIVE_AUTO_POLLS.delete(key);
+    } else {
+      setTimeout(poll, 60000);
+    }
+  };
+  poll();
+}
+
+function checkAutoSyncTriggers() {
+  if (!CALENDAR_EVENTS_CACHE) return;
+  const now = Date.now();
+  CALENDAR_EVENTS_CACHE.forEach(e => {
+    if (!e.time_utc) return;
+    const key = eventKey(e);
+    if (ACTIVE_AUTO_POLLS.has(key)) return;
+    const t = new Date(e.time_utc).getTime();
+    if (now >= t && now < t + 45 * 60000) startAutoSyncPoll(key, e.currency);
+  });
+}
+
+// Every 20s: cheap enough to keep the 5-minute countdown/"just released"
+// badges live, and to notice a release time has just passed.
+setInterval(() => { renderCalendarStrip(); checkAutoSyncTriggers(); }, 20000);
 
 // USD-only real release-calendar dates (see fred_calendar.py) -- silently
 // stays empty if FRED_API_KEY isn't set, no error shown for that case.

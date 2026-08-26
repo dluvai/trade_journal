@@ -13,14 +13,23 @@ funding basis, not the futures curve, so this is the closer of the two.
 
 Both fetchers cache their result in memory for a short window so a
 dashboard left open polling every 20-30s doesn't hammer Yahoo on every tab.
+
+Currency news is filtered twice before it reaches the dashboard: anything
+older than 2 days is dropped outright, then a Claude call judges which of
+what's left is actually likely to move a currency (see
+_filter_market_moving) -- routine single-company earnings and generic
+market wrap-ups get filtered out rather than cluttering the panel.
 """
 import concurrent.futures
 import html
 import json
+import os
 import re
 import time
 import urllib.parse
 import urllib.request
+
+import ai_bias
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
@@ -88,27 +97,87 @@ def get_quotes():
     return _cached("quotes", 3, _fetch_quotes)
 
 
-def _fetch_news_for_queries(queries, limit=15):
+NEWS_MAX_AGE_SECONDS = 2 * 24 * 3600  # 2 days -- older than that isn't "latest news" anymore
+
+
+def _fetch_news_for_queries(queries, limit=20):
     seen = {}
+    cutoff = time.time() - NEWS_MAX_AGE_SECONDS
     for q in queries:
         try:
             data = _get_json(
                 "https://query1.finance.yahoo.com/v1/finance/search",
-                {"q": q, "newsCount": 8, "quotesCount": 0},
+                # Fetch more than we'll keep -- the 2-day age filter and the
+                # market-moving filter below both throw articles away, so a
+                # tight per-query count would leave a currency with hardly
+                # anything left on a quiet news day.
+                {"q": q, "newsCount": 20, "quotesCount": 0},
             )
         except Exception:
             continue
         for item in data.get("news", []):
             uid = item.get("uuid")
-            if not uid or uid in seen or not item.get("title"):
+            pub_time = item.get("providerPublishTime") or 0
+            if not uid or uid in seen or not item.get("title") or pub_time < cutoff:
                 continue
             seen[uid] = {
                 "title": item["title"],
                 "publisher": item.get("publisher") or "",
                 "link": item.get("link") or "",
-                "time": item.get("providerPublishTime") or 0,
+                "time": pub_time,
             }
     return sorted(seen.values(), key=lambda x: x["time"], reverse=True)[:limit]
+
+
+# Cached per article link -- an article's importance doesn't change once
+# classified, so this never needs to expire, only grow (negligible for a
+# personal dashboard's news volume).
+_importance_cache = {}
+
+
+def _filter_market_moving(items):
+    """Keep only headlines a Claude call judges likely to actually move a
+    major currency -- filters out routine single-company earnings, opinion
+    columns, and generic "markets today" wraps that would otherwise clutter
+    the panel. Fails open (keeps everything) if no ANTHROPIC_API_KEY is
+    configured or the call errors, rather than silently showing an empty
+    panel because of a missing key or a transient API hiccup."""
+    if not items:
+        return items
+    uncached = [it for it in items if it["link"] not in _importance_cache]
+    if uncached:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            for it in uncached:
+                _importance_cache[it["link"]] = True
+        else:
+            try:
+                import anthropic
+                client = anthropic.Anthropic(api_key=api_key)
+                numbered = "\n".join(f"{i + 1}. {it['title']} ({it['publisher']})" for i, it in enumerate(uncached))
+                prompt = (
+                    "You're filtering a forex trader's news feed. For each numbered headline "
+                    "below, decide whether it's genuinely likely to move a major currency -- "
+                    "things like interest rate/inflation/employment/GDP data and commentary, "
+                    "central bank action, elections, or geopolitical shocks involving major "
+                    "economies (war, sanctions, major conflict escalation/de-escalation, oil "
+                    "supply shocks). Routine single-company earnings, generic market wrap-ups, "
+                    "opinion columns, and minor data revisions are NOT market-moving.\n\n"
+                    "Reply with ONLY a JSON array of true/false, same order and length as the "
+                    f"list, nothing else.\n\n{numbered}"
+                )
+                response = client.messages.create(
+                    model=ai_bias.MODEL, max_tokens=500,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = "".join(b.text for b in response.content if b.type == "text")
+                flags = json.loads(re.search(r"\[.*\]", text, re.DOTALL).group(0))
+                for it, flag in zip(uncached, flags):
+                    _importance_cache[it["link"]] = bool(flag)
+            except Exception:
+                for it in uncached:
+                    _importance_cache.setdefault(it["link"], True)
+    return [it for it in items if _importance_cache.get(it["link"], True)]
 
 
 # Per-currency queries for the Bias Check news panel -- verified by hand.
@@ -128,7 +197,7 @@ _MAJORS_FEED = ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X"]
 
 def get_currency_news(currency):
     queries = CURRENCY_NEWS_QUERIES.get(currency, _MAJORS_FEED)
-    return _cached(f"news_{currency}", 300, lambda: _fetch_news_for_queries(queries))
+    return _cached(f"news_{currency}", 300, lambda: _filter_market_moving(_fetch_news_for_queries(queries)))
 
 
 _DESCRIPTION_PATTERNS = [
