@@ -32,12 +32,7 @@
   <div id="macroWorkspace"></div>
 </div>
 <div class="panel">
-  <h2>Upcoming news</h2>
-  <div id="calendarStrip"></div>
-</div>
-<div class="panel">
   <h2><span id="ccyNewsTitle">USD</span> news</h2>
-  <div id="ccyNewsNote" style="display:none; color:var(--text-muted); font-size:11.5px; margin:-6px 0 10px;">General forex news, ranked toward this currency -- Yahoo has no dedicated feed for it.</div>
   <div class="news-panel-body" id="ccyNewsPanel"></div>
 </div>
 {% endblock %}
@@ -80,14 +75,6 @@ const METRIC_GROUPS = [
   { title: 'Policy', metrics: [
     { key: 'interest_rate', label: 'Policy rate', suffix: '%', step: '0.01' },
   ] },
-  { title: 'Inflation', metrics: [
-    { key: 'cpi_yoy', label: 'CPI YoY', suffix: '%', step: '0.01' },
-    { key: 'cpi_mom', label: 'CPI MoM', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
-    { key: 'core_cpi_yoy', label: 'Core CPI YoY', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
-    { key: 'core_ppi_yoy', label: 'Core PPI YoY', suffix: '%', step: '0.01', applies: ['USD'] },
-    { key: 'core_pce_yoy', label: 'Core PCE YoY', suffix: '%', step: '0.01', applies: ['USD'] },
-    { key: 'core_pce_mom', label: 'Core PCE MoM', suffix: '%', step: '0.01', applies: ['USD'] },
-  ] },
   { title: 'Labor', metrics: [
     { key: 'unemployment', label: 'Unemployment', suffix: '%', step: '0.01' },
     { key: 'employment_change', label: 'Employment change', suffix: 'K', step: '1', applies: ['USD'] },
@@ -106,6 +93,18 @@ const METRIC_GROUPS = [
   ] },
   { title: 'PMI', metrics: [
     { key: 'pmi', label: 'PMI', suffix: '', step: '0.1' },
+  ] },
+  // Last on purpose, and laid out as a wide 2-column card (see .wide in
+  // dashboard-core.css) -- it has up to 6 rows depending on the currency,
+  // more than any other card, so stacked in one narrow column it towered
+  // over its neighbors and stretched their whole grid row to match.
+  { title: 'Inflation', wide: true, metrics: [
+    { key: 'cpi_yoy', label: 'CPI YoY', suffix: '%', step: '0.01' },
+    { key: 'cpi_mom', label: 'CPI MoM', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
+    { key: 'core_cpi_yoy', label: 'Core CPI YoY', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
+    { key: 'core_ppi_yoy', label: 'Core PPI YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'core_pce_yoy', label: 'Core PCE YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'core_pce_mom', label: 'Core PCE MoM', suffix: '%', step: '0.01', applies: ['USD'] },
   ] },
 ];
 const METRIC_META = METRIC_GROUPS.flatMap(g => g.metrics);
@@ -164,9 +163,10 @@ function nextDateFor(metricKey) {
 function categoryCardHtml(row, group, ccy) {
   const metrics = group.metrics.filter(m => !m.applies || m.applies.includes(ccy));
   if (!metrics.length) return '';
-  return `<div class="metric-category-card">
+  const rowsHtml = metrics.map(m => metricRowHtml(row, m)).join('');
+  return `<div class="metric-category-card${group.wide ? ' wide' : ''}">
       <div class="metric-category-title">${group.title}</div>
-      ${metrics.map(m => metricRowHtml(row, m)).join('')}
+      ${group.wide ? `<div class="metric-row-grid">${rowsHtml}</div>` : rowsHtml}
     </div>`;
 }
 
@@ -216,7 +216,6 @@ function renderCcySwitcher() {
       renderMacroWorkspace(LATEST_MACRO_ROWS);
       document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
       loadCcyNews();
-      renderCalendarStrip();
     });
   });
 }
@@ -252,127 +251,6 @@ async function loadDebtSnapshot() {
     </div>
   `;
 }
-
-// Currency-agnostic (spans every currency at once), so this loads once on
-// init rather than re-fetching on every currency switch like the macro
-// workspace does -- see calendar_view.py for how the two sources merge.
-let CALENDAR_EVENTS_CACHE = [];
-
-async function loadCalendarStrip() {
-  try {
-    CALENDAR_EVENTS_CACHE = await (await fetch('/api/calendar')).json();
-  } catch (e) {
-    CALENDAR_EVENTS_CACHE = null; // distinct from [] -- [] means "fetched fine, nothing due"; null means "the fetch itself failed"
-  }
-  renderCalendarStrip();
-}
-
-// Countdown text for an event's exact time_utc -- null (JPY, or any date
-// with no verified time) just shows nothing rather than a fake time.
-function countdownLabel(timeUtc) {
-  if (!timeUtc) return null;
-  const diffMs = new Date(timeUtc).getTime() - Date.now();
-  const mins = Math.round(diffMs / 60000);
-  if (mins > 5) return null;
-  if (diffMs <= 0) return mins > -60 ? 'Just released' : null;
-  return `in ${mins}m`;
-}
-
-// An event is still worth showing once its own date has passed (no exact
-// time -- e.g. BOJ) only through the end of that calendar day; with an
-// exact time, it drops off once countdownLabel would stop calling it
-// "Just released" (60 min past) -- otherwise a release from days ago would
-// sit in the list forever, since the backend's own filtering only recomputes
-// "today" once per cache cycle, not on every request.
-function isStillRelevant(e) {
-  if (e.time_utc) return Date.now() - new Date(e.time_utc).getTime() < 60 * 60000;
-  const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in the viewer's own timezone
-  return e.date >= todayLocal;
-}
-
-// Filters the already-fetched events by whichever currency is selected in
-// the switcher, plus whether they're still current -- no new network
-// request needed for this filtering, loadCalendarStrip() separately
-// refetches the underlying list on an interval (see init below) so newly
-// in-range events show up without a full page reload.
-function renderCalendarStrip() {
-  const host = document.getElementById('calendarStrip');
-  if (CALENDAR_EVENTS_CACHE === null) { host.innerHTML = '<div class="empty">Calendar unavailable right now.</div>'; return; }
-  const events = CALENDAR_EVENTS_CACHE.filter(e => e.currency === selectedCcy && isStillRelevant(e));
-  if (!events.length) {
-    host.innerHTML = `<div class="empty">Nothing scheduled for ${selectedCcy} in the next two weeks (or FRED_API_KEY isn't set, so only rate decisions would show).</div>`;
-    return;
-  }
-  const rows = events.map(e => {
-    const timeText = e.time_utc
-      ? new Date(e.time_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : '—';
-    const countdown = countdownLabel(e.time_utc);
-    return `
-    <tr>
-      <td class="strong" style="font-family:var(--font-mono);">${e.date}</td>
-      <td style="font-family:var(--font-mono);">${timeText}</td>
-      <td>${e.currency}</td>
-      <td>${e.label}</td>
-      <td>${countdown ? `<span class="badge WIN">${countdown}</span>` : ''}</td>
-    </tr>`;
-  }).join('');
-  host.innerHTML = `<table>
-    <thead><tr><th>Date</th><th>Time (local)</th><th>Currency</th><th>Event</th><th></th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-}
-
-// Once a calendar event's exact time passes, automatically re-syncs FRED
-// every minute (instead of requiring the manual Sync button) until the
-// currency's data actually updates or 45 minutes go by -- FRED usually
-// reflects a fresh government release within minutes, not instantly, so a
-// single sync right at release time would often still show the old print.
-// Only events with a verified time_utc participate (not JPY -- see
-// rate_calendar.py); the Sync button stays as a manual fallback for those
-// and for anything this misses. A server-side background thread
-// (auto_sync.py) independently covers the case where nobody has this page
-// open at all -- this client-side poller is a supplementary "while you're
-// looking at it" refresh, only active on this page.
-const ACTIVE_AUTO_POLLS = new Set();
-
-function eventKey(e) { return `${e.date}|${e.currency}|${e.label}`; }
-
-function startAutoSyncPoll(key, ccy) {
-  ACTIVE_AUTO_POLLS.add(key);
-  let attempts = 0;
-  const before = JSON.stringify((LATEST_MACRO_ROWS.find(r => r.currency === ccy) || {}));
-  const poll = async () => {
-    attempts++;
-    try {
-      await DC.apiSend('POST', '/api/macro/sync', {});
-      await loadMacro();
-    } catch (e) { /* transient network hiccup -- next minute retries */ }
-    const after = JSON.stringify((LATEST_MACRO_ROWS.find(r => r.currency === ccy) || {}));
-    if (after !== before || attempts >= 45) {
-      ACTIVE_AUTO_POLLS.delete(key);
-    } else {
-      setTimeout(poll, 60000);
-    }
-  };
-  poll();
-}
-
-function checkAutoSyncTriggers() {
-  if (!CALENDAR_EVENTS_CACHE) return;
-  const now = Date.now();
-  CALENDAR_EVENTS_CACHE.forEach(e => {
-    if (!e.time_utc) return;
-    const key = eventKey(e);
-    if (ACTIVE_AUTO_POLLS.has(key)) return;
-    const t = new Date(e.time_utc).getTime();
-    if (now >= t && now < t + 45 * 60000) startAutoSyncPoll(key, e.currency);
-  });
-}
-
-// Every 20s: cheap enough to keep the 5-minute countdown/"just released"
-// badges live, and to notice a release time has just passed.
-setInterval(() => { renderCalendarStrip(); checkAutoSyncTriggers(); }, 20000);
 
 // USD-only real release-calendar dates (see fred_calendar.py) -- silently
 // stays empty if FRED_API_KEY isn't set, no error shown for that case.
@@ -562,15 +440,13 @@ document.getElementById('newsModalClose').addEventListener('click', () => newsMo
 newsModalBackdrop.addEventListener('click', (e) => { if (e.target === newsModalBackdrop) newsModalBackdrop.classList.add('hidden'); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !newsModalBackdrop.classList.contains('hidden')) newsModalBackdrop.classList.add('hidden'); });
 
-// News panel follows whichever currency is selected -- EUR/GBP/AUD/NZD get
-// a real currency-specific feed; USD/JPY/CHF/CAD share one combined majors
-// feed server-side, re-ranked toward that currency's own keywords (see
-// market_data.py -- no working per-currency query exists for those four).
-const SHARED_FEED_CCYS = ['USD', 'JPY', 'CHF', 'CAD'];
-
+// News panel follows whichever currency is selected -- every currency gets
+// a genuinely relevant feed (see market_data.py's CURRENCY_NEWS_QUERIES):
+// EUR/GBP/AUD/NZD/JPY/CHF/CAD each have their own real Yahoo ticker, and
+// USD's feed aggregates every major pair since USD sits on one side of all
+// of them.
 async function loadCcyNews() {
   document.getElementById('ccyNewsTitle').textContent = selectedCcy;
-  document.getElementById('ccyNewsNote').style.display = SHARED_FEED_CCYS.includes(selectedCcy) ? '' : 'none';
   const host = document.getElementById('ccyNewsPanel');
   try {
     renderNewsItems(host, await (await fetch(`/api/news/${selectedCcy}`)).json());
@@ -583,11 +459,9 @@ async function loadCcyNews() {
   await loadMacro();
   loadReleaseCalendar();
   loadRateCalendar();
-  loadCalendarStrip();
   loadDebtSnapshot();
   loadCcyNews();
   setInterval(loadCcyNews, 60000);
-  setInterval(loadCalendarStrip, 5 * 60000);
 })();
 </script>
 {% endblock %}

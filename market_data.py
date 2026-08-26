@@ -100,20 +100,30 @@ def get_quotes():
 NEWS_MAX_AGE_SECONDS = 2 * 24 * 3600  # 2 days -- older than that isn't "latest news" anymore
 
 
+def _fetch_one_news_query(q):
+    try:
+        return _get_json(
+            "https://query1.finance.yahoo.com/v1/finance/search",
+            # Fetch more than we'll keep -- the 2-day age filter and the
+            # market-moving filter below both throw articles away, so a
+            # tight per-query count would leave a currency with hardly
+            # anything left on a quiet news day.
+            {"q": q, "newsCount": 20, "quotesCount": 0},
+        )
+    except Exception:
+        return None
+
+
 def _fetch_news_for_queries(queries, limit=20):
     seen = {}
     cutoff = time.time() - NEWS_MAX_AGE_SECONDS
-    for q in queries:
-        try:
-            data = _get_json(
-                "https://query1.finance.yahoo.com/v1/finance/search",
-                # Fetch more than we'll keep -- the 2-day age filter and the
-                # market-moving filter below both throw articles away, so a
-                # tight per-query count would leave a currency with hardly
-                # anything left on a quiet news day.
-                {"q": q, "newsCount": 20, "quotesCount": 0},
-            )
-        except Exception:
+    # USD's query list runs to 7 (every major pair has USD on one side), so
+    # this is worth parallelizing the same way _fetch_quotes does -- these
+    # are independent network waits, not CPU work.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(queries) or 1) as pool:
+        results = list(pool.map(_fetch_one_news_query, queries))
+    for data in results:
+        if not data:
             continue
         for item in data.get("news", []):
             uid = item.get("uuid")
@@ -185,48 +195,29 @@ def _filter_market_moving(items):
 
 
 # Per-currency queries for the Bias Check news panel -- verified by hand.
-# USD-first pairs (USDJPY, USDCHF, USDCAD) and USD's own dollar-index symbol
-# only ever return Yahoo's generic "trending" fallback regardless of
-# phrasing (tried "USDJPY forex", "yen dollar", "Bank of Japan yen",
-# "DX-Y.NYB", "dollar index", "loonie" -- all either identical junk or
-# nothing) -- so USD, JPY, CHF, and CAD all share the combined majors feed
-# below rather than a currency-specific query that doesn't actually exist.
+# Earlier attempts at USD-first pairs used the wrong Yahoo ticker
+# convention (USDJPY=X, USDCHF=X, USDCAD=X aren't real symbols, so Yahoo
+# silently fell back to generic "trending" junk) -- Yahoo's actual tickers
+# for these are just the counter-currency code (JPY=X, CHF=X, CAD=X), which
+# return genuinely relevant, currency-specific results. USD itself has no
+# single ticker, so its feed combines every major pair -- USD sits on one
+# side of all of them, so real per-currency news about any of the other
+# seven is also real USD news.
 CURRENCY_NEWS_QUERIES = {
     "EUR": ["EURUSD=X"],
     "GBP": ["GBPUSD=X"],
     "AUD": ["AUDUSD=X"],
     "NZD": ["NZDUSD=X"],
+    "JPY": ["JPY=X"],
+    "CHF": ["CHF=X"],
+    "CAD": ["CAD=X"],
+    "USD": ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X", "JPY=X", "CHF=X", "CAD=X"],
 }
-_MAJORS_FEED = ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X"]
-
-# For the four currencies sharing _MAJORS_FEED, the pool of articles is
-# identical no matter which one you're viewing -- there's no way around
-# that with this data source, but the ORDER doesn't have to be. Re-ranking
-# toward each currency's own keywords means JPY's panel actually surfaces
-# whatever yen/BOJ-relevant items exist in that shared pool first, instead
-# of every one of the four showing the exact same top headlines.
-_RELEVANCE_KEYWORDS = {
-    "USD": ["dollar", "fed ", "federal reserve", "fomc", "u.s.", "treasury", "powell"],
-    "JPY": ["yen", "japan", "boj", "bank of japan"],
-    "CHF": ["franc", "swiss", "snb", "switzerland"],
-    "CAD": ["loonie", "canada", "canadian", "boc", "bank of canada"],
-}
-
-
-def _rerank_by_relevance(items, currency):
-    keywords = _RELEVANCE_KEYWORDS.get(currency)
-    if not keywords:
-        return items
-    def score(it):
-        title = it["title"].lower()
-        return sum(1 for k in keywords if k in title)
-    return sorted(items, key=score, reverse=True)
 
 
 def get_currency_news(currency):
-    queries = CURRENCY_NEWS_QUERIES.get(currency, _MAJORS_FEED)
-    items = _cached(f"news_{currency}", 60, lambda: _filter_market_moving(_fetch_news_for_queries(queries)))
-    return _rerank_by_relevance(items, currency) if currency in _RELEVANCE_KEYWORDS else items
+    queries = CURRENCY_NEWS_QUERIES[currency]
+    return _cached(f"news_{currency}", 60, lambda: _filter_market_moving(_fetch_news_for_queries(queries)))
 
 
 _DESCRIPTION_PATTERNS = [

@@ -370,6 +370,18 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
   display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px;
 }
 .metric-category-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+/* Wide cards (currently just Inflation, which can run to 6 rows -- taller
+   than any other card) span 2 grid columns and lay their rows out in a
+   2-column sub-grid instead of one long stack, so the card reads as a
+   rectangle instead of a narrow tower that stretches its whole grid row
+   to match. */
+.metric-category-card.wide { grid-column: span 2; }
+.metric-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+.metric-row-grid .metric-row { margin-top: 0; padding-top: 0; border-top: none; }
+@media (max-width: 640px) {
+  .metric-category-card.wide { grid-column: span 1; }
+  .metric-row-grid { grid-template-columns: 1fr; }
+}
 .metric-category-title { font-size: 10.5px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px; }
 .metric-row + .metric-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .metric-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
