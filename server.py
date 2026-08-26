@@ -24,25 +24,31 @@ Local secrets, without retyping them every session:
         SECRET_KEY=any-random-string
         FRED_API_KEY=your-fred-key
         ANTHROPIC_API_KEY=your-anthropic-key
+        RESEND_API_KEY=your-resend-key
+        RESEND_FROM_EMAIL=onboarding@resend.dev
     Then just run `python server.py` -- no PowerShell $env: commands needed.
     A real environment variable set in the shell always wins over .env, so
     this is purely a local convenience, not a replacement for how Render
     (or any real deployment) is configured.
 """
 import os
+import re
 import secrets
 from functools import wraps
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import ai_bias
+import auth
+import auth_pages
 import auto_sync
 import backup
 import calendar_view
 import db
 import debt_model
+import email_sender
 import fred_calendar
 import fred_sync
 import fundamentals
@@ -80,33 +86,17 @@ app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
-LOGIN_PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Felix Trade Journal — Login</title>
-<style>
-  html,body{{margin:0;height:100%;background:#0d0d0d;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-    display:flex;align-items:center;justify-content:center;}}
-  form{{background:#1a1a19;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:32px 28px;width:280px;}}
-  h1{{font-size:16px;margin:0 0 18px;}}
-  input{{width:100%;background:#212120;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;
-    padding:9px 10px;font-size:14px;box-sizing:border-box;margin-bottom:12px;}}
-  button{{width:100%;background:#3987e5;border:none;border-radius:8px;color:#fff;font-weight:650;padding:10px;
-    font-size:13.5px;cursor:pointer;}}
-  .error{{color:#e66767;font-size:12.5px;margin-bottom:10px;}}
-</style></head><body>
-<form method="post">
-  <h1>Felix Trade Journal</h1>
-  {error}
-  <input type="text" name="username" placeholder="Username" autofocus autocapitalize="off">
-  <input type="password" name="password" placeholder="Password">
-  <button type="submit">Enter</button>
-</form>
-</body></html>"""
+PUBLIC_ENDPOINTS = {
+    "login", "signup", "verify_email", "resend_verification_code",
+    "verify_email_resume", "forgot_password", "reset_password",
+}
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 @app.before_request
 def require_login():
-    if request.endpoint == "login":
+    if request.endpoint in PUBLIC_ENDPOINTS:
         return
     if db.count_users() == 0:
         return  # fresh checkout, nobody provisioned yet -- skip the gate entirely
@@ -124,13 +114,198 @@ def login():
             session["user_id"] = user["id"]
             return redirect(url_for("index"))
         error = '<div class="error">Incorrect username or password.</div>'
-    return LOGIN_PAGE.format(error=error)
+    return auth_pages.render("Login", auth_pages.LOGIN_PAGE.format(error=error))
 
 
 @app.get("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+def _mask_email(email):
+    name, _, domain = email.partition("@")
+    visible = name[:2] if len(name) > 2 else name[:1]
+    return f"{visible}{'*' * max(1, len(name) - len(visible))}@{domain}"
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    fields = {"first_name": "", "last_name": "", "username": "", "email": ""}
+    error = ""
+    if request.method == "POST":
+        fields = {k: (request.form.get(k) or "").strip() for k in fields}
+        password = request.form.get("password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+
+        if not all(fields.values()) or not password or not confirm_password:
+            error = "All fields are required."
+        elif not EMAIL_RE.match(fields["email"]):
+            error = "Enter a valid email address."
+        elif password != confirm_password:
+            error = "Passwords don't match."
+        elif len(password) < 8:
+            error = "Password must be at least 8 characters."
+        elif db.get_user_by_username(fields["username"]):
+            error = "That username is already taken."
+        elif db.get_user_by_email(fields["email"]):
+            error = "That email is already registered."
+
+        if not error:
+            user_id = db.create_user(
+                fields["username"], generate_password_hash(password),
+                fields["first_name"], fields["last_name"], fields["email"],
+            )
+            code = auth.generate_code()
+            db.set_verification_code(user_id, auth.hash_code(code), auth.expiry_timestamp())
+            email_sender.send_verification_code(fields["email"], code)
+            session["pending_verification_user_id"] = user_id
+            return redirect(url_for("verify_email"))
+
+    body = auth_pages.SIGNUP_PAGE.format(
+        error=f'<div class="error">{error}</div>' if error else "", **fields,
+    )
+    return auth_pages.render("Sign Up", body)
+
+
+@app.route("/verify-email", methods=["GET", "POST"])
+def verify_email():
+    user_id = session.get("pending_verification_user_id")
+    if not user_id:
+        return auth_pages.render("Verify Email", auth_pages.VERIFY_EMAIL_RESUME_PAGE.format(error=""))
+
+    user = db.get_user_by_id(user_id)
+    if not user or user["email_verified"]:
+        session.pop("pending_verification_user_id", None)
+        return redirect(url_for("login"))
+
+    error = ""
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip()
+        if auth.is_expired(user["verification_code_expires_at"]):
+            error = "That code has expired. Request a new one below."
+        elif user["verification_attempts"] >= auth.MAX_VERIFICATION_ATTEMPTS:
+            error = "Too many incorrect attempts. Request a new code below."
+        elif not auth.code_matches(code, user["verification_code_hash"]):
+            db.record_failed_verification_attempt(user_id)
+            error = "Incorrect code."
+        else:
+            db.mark_email_verified(user_id)
+            session.pop("pending_verification_user_id", None)
+            session["user_id"] = user_id
+            return redirect(url_for("index"))
+
+    body = auth_pages.VERIFY_EMAIL_PAGE.format(
+        masked_email=_mask_email(user["email"]),
+        error=f'<div class="error">{error}</div>' if error else "",
+    )
+    return auth_pages.render("Verify Email", body)
+
+
+@app.post("/verify-email/resend")
+def resend_verification_code():
+    user_id = session.get("pending_verification_user_id")
+    if user_id:
+        user = db.get_user_by_id(user_id)
+        if user and not user["email_verified"]:
+            wait = auth.seconds_until_resend_allowed(user["verification_code_expires_at"])
+            if wait <= 0:
+                code = auth.generate_code()
+                db.set_verification_code(user_id, auth.hash_code(code), auth.expiry_timestamp())
+                email_sender.send_verification_code(user["email"], code)
+    return redirect(url_for("verify_email"))
+
+
+@app.post("/verify-email/resume")
+def verify_email_resume():
+    username = (request.form.get("username") or "").strip()
+    user = db.get_user_by_username(username)
+    if not user or user["email_verified"] or not user["email"]:
+        body = auth_pages.VERIFY_EMAIL_RESUME_PAGE.format(
+            error='<div class="error">No pending verification found for that username.</div>',
+        )
+        return auth_pages.render("Verify Email", body)
+    session["pending_verification_user_id"] = user["id"]
+    return redirect(url_for("verify_email"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    identifier = ""
+    if request.method == "POST":
+        identifier = (request.form.get("identifier") or "").strip()
+        user = db.get_user_by_username(identifier) or db.get_user_by_email(identifier)
+        # Always the same response whether or not an account was found --
+        # anything else would let this form be used to probe which
+        # usernames/emails exist.
+        if user and user["email"]:
+            code = auth.generate_code()
+            db.set_reset_code(user["id"], auth.hash_code(code), auth.expiry_timestamp())
+            email_sender.send_reset_code(user["email"], code)
+            session["pending_reset_user_id"] = user["id"]
+        return redirect(url_for("reset_password", sent=1))
+
+    body = auth_pages.FORGOT_PASSWORD_PAGE.format(error="", identifier=identifier)
+    return auth_pages.render("Forgot Password", body)
+
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    info = '<div class="info">If an account exists, a code has been sent.</div>' if request.args.get("sent") else ""
+    error = ""
+    if request.method == "POST":
+        user_id = session.get("pending_reset_user_id")
+        user = db.get_user_by_id(user_id) if user_id else None
+        code = (request.form.get("code") or "").strip()
+        password = request.form.get("password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+
+        if not user or auth.is_expired(user["reset_code_expires_at"]):
+            error = "That code is invalid or has expired."
+        elif user["reset_attempts"] >= auth.MAX_RESET_ATTEMPTS:
+            error = "Too many incorrect attempts. Request a new code."
+        elif not auth.code_matches(code, user["reset_code_hash"]):
+            db.record_failed_reset_attempt(user_id)
+            error = "Incorrect code."
+        elif password != confirm_password:
+            error = "Passwords don't match."
+        elif len(password) < 8:
+            error = "Password must be at least 8 characters."
+        else:
+            db.reset_password(user_id, generate_password_hash(password))
+            session.pop("pending_reset_user_id", None)
+            session["user_id"] = user_id
+            return redirect(url_for("index"))
+
+    body = auth_pages.RESET_PASSWORD_PAGE.format(
+        info=info, error=f'<div class="error">{error}</div>' if error else "",
+    )
+    return auth_pages.render("Reset Password", body)
+
+
+@app.route("/profile", methods=["GET", "POST"])
+def profile():
+    user = db.get_user_by_id(session["user_id"])
+    error = ""
+    success = ""
+    if request.method == "POST":
+        current_password = request.form.get("current_password") or ""
+        new_password = request.form.get("new_password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+        if not check_password_hash(user["password_hash"], current_password):
+            error = "Current password is incorrect."
+        elif new_password != confirm_password:
+            error = "New passwords don't match."
+        elif len(new_password) < 8:
+            error = "New password must be at least 8 characters."
+        else:
+            db.update_password(user["id"], generate_password_hash(new_password))
+            success = "Password updated."
+
+    return render_template(
+        "profile.html", active_page="profile", user=db.public_user_dict(user),
+        error=error, success=success,
+    )
 
 # Only these shared assets are servable as static files -- deliberately not the
 # whole folder, since that also holds trades.db and the source scripts.

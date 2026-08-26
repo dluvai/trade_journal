@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Profile — Felix Trade Journal{% endblock %}
+{% block page_title %}Profile{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Account</h2>
+  <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+    <div class="field"><label>Username</label><div>{{ user.username }}</div></div>
+    <div class="field"><label>Name</label><div>{{ (user.first_name or '') ~ ' ' ~ (user.last_name or '') }}</div></div>
+    <div class="field">
+      <label>Email</label>
+      <div>
+        {% if user.email %}
+          {{ user.email }}
+          {% if user.email_verified %}
+            <span style="color:var(--good); font-size:11.5px; margin-left:6px;">&#10003; Verified</span>
+          {% else %}
+            <span style="color:var(--text-muted); font-size:11.5px; margin-left:6px;">Unverified</span>
+          {% endif %}
+        {% else %}
+          <span style="color:var(--text-muted);">No email on file</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="field"><label>Member Since</label><div>{{ user.created_at[:10] }}</div></div>
+  </div>
+</div>
+<div class="panel">
+  <h2>Change Password</h2>
+  <form method="post">
+    <div class="field" style="margin-bottom:12px;"><label>Current Password</label><input type="password" name="current_password" required></div>
+    <div class="form-grid">
+      <div class="field"><label>New Password</label><input type="password" name="new_password" required></div>
+      <div class="field"><label>Confirm New Password</label><input type="password" name="confirm_password" required></div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Update Password</button>
+      {% if error %}<span style="color:var(--critical); font-size:12px;">{{ error }}</span>{% endif %}
+      {% if success %}<span style="color:var(--good); font-size:12px;">{{ success }}</span>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

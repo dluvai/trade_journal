@@ -33,6 +33,10 @@
     {% endfor %}
   </div>
   <div class="sidebar-footer">
+    <a class="nav-item {{ 'active' if active_page == 'profile' else '' }}" href="{{ url_for('profile') }}" aria-label="Profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Profile</span>
+    </a>
     <a class="nav-item" href="{{ url_for('logout') }}" aria-label="Log out">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
       <span>Log Out</span>
@@ -48,7 +52,7 @@
         <button type="button" class="sidebar-hamburger" id="sidebarHamburger" aria-label="Open navigation">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
-        <h1>{% for item in nav_items %}{% if item.key == active_page %}{{ item.label }}{% endif %}{% endfor %}</h1>
+        <h1>{% block page_title %}{% for item in nav_items %}{% if item.key == active_page %}{{ item.label }}{% endif %}{% endfor %}{% endblock %}</h1>
       </div>
       <div class="controls">
         {% block header_controls %}{% endblock %}

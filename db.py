@@ -104,6 +104,32 @@ def _migrate_user_id_columns(conn):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER")
 
 
+def _migrate_user_profile_columns(conn):
+    # Signup/verification/password-reset support, added after real accounts
+    # (e.g. felix's) already existed -- every new column is nullable or
+    # defaults to "not verified yet" so existing accounts keep working
+    # unchanged. No UNIQUE constraint on email: SQLite/libsql can't add one
+    # via ALTER TABLE on an existing table, so uniqueness is enforced at the
+    # app layer instead (same "no FK, app-level discipline" convention
+    # already used for trades.user_id).
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)").rows}
+    additions = {
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "email_verified": "INTEGER NOT NULL DEFAULT 0",
+        "verification_code_hash": "TEXT",
+        "verification_code_expires_at": "TEXT",
+        "verification_attempts": "INTEGER NOT NULL DEFAULT 0",
+        "reset_code_hash": "TEXT",
+        "reset_code_expires_at": "TEXT",
+        "reset_attempts": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for col, coltype in additions.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {coltype}")
+
+
 _schema_ready = False
 _client = None
 
@@ -124,6 +150,7 @@ def _ensure_schema(conn):
     _migrate_macro_prev_columns(conn)
     _migrate_trades_strategy_column(conn)
     _migrate_user_id_columns(conn)
+    _migrate_user_profile_columns(conn)
     _schema_ready = True
 
 
@@ -357,18 +384,40 @@ def upsert_macro(currency, fields):
 
 # ---------- users ----------
 
+# Fields safe to hand back to a browser -- everything else on the users row
+# (password_hash, every verification/reset code+expiry+attempts column) must
+# never reach a template context or jsonify() call.
+_PUBLIC_USER_FIELDS = ["id", "username", "first_name", "last_name", "email", "email_verified", "created_at"]
+
+
+def public_user_dict(user):
+    return {k: user.get(k) for k in _PUBLIC_USER_FIELDS}
+
+
 def get_user_by_username(username):
     conn = get_conn()
     rows = conn.execute("SELECT * FROM users WHERE username=?", (username,)).rows
     return rows[0].asdict() if rows else None
 
 
-def create_user(username, password_hash):
+def get_user_by_id(user_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).rows
+    return rows[0].asdict() if rows else None
+
+
+def get_user_by_email(email):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM users WHERE email=?", (email,)).rows
+    return rows[0].asdict() if rows else None
+
+
+def create_user(username, password_hash, first_name=None, last_name=None, email=None):
     now = datetime.now().isoformat(timespec="seconds")
     conn = get_conn()
     rs = conn.execute(
-        "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-        (username, password_hash, now),
+        "INSERT INTO users (username, password_hash, first_name, last_name, email, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (username, password_hash, first_name, last_name, email, now),
     )
     new_id = rs.last_insert_rowid
     return new_id
@@ -378,3 +427,52 @@ def count_users():
     conn = get_conn()
     n = conn.execute("SELECT COUNT(*) AS n FROM users").rows[0]["n"]
     return n
+
+
+def set_verification_code(user_id, code_hash, expires_at):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET verification_code_hash=?, verification_code_expires_at=?, verification_attempts=0 WHERE id=?",
+        (code_hash, expires_at, user_id),
+    )
+
+
+def record_failed_verification_attempt(user_id):
+    conn = get_conn()
+    conn.execute("UPDATE users SET verification_attempts = verification_attempts + 1 WHERE id=?", (user_id,))
+
+
+def mark_email_verified(user_id):
+    conn = get_conn()
+    conn.execute(
+        """UPDATE users SET email_verified=1, verification_code_hash=NULL,
+               verification_code_expires_at=NULL, verification_attempts=0 WHERE id=?""",
+        (user_id,),
+    )
+
+
+def set_reset_code(user_id, code_hash, expires_at):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET reset_code_hash=?, reset_code_expires_at=?, reset_attempts=0 WHERE id=?",
+        (code_hash, expires_at, user_id),
+    )
+
+
+def record_failed_reset_attempt(user_id):
+    conn = get_conn()
+    conn.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id=?", (user_id,))
+
+
+def reset_password(user_id, password_hash):
+    conn = get_conn()
+    conn.execute(
+        """UPDATE users SET password_hash=?, reset_code_hash=NULL,
+               reset_code_expires_at=NULL, reset_attempts=0 WHERE id=?""",
+        (password_hash, user_id),
+    )
+
+
+def update_password(user_id, password_hash):
+    conn = get_conn()
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
