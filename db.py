@@ -59,6 +59,10 @@ MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF"]
 
 
 def get_conn():
+    # If DB_PATH points at a directory that doesn't exist yet (e.g. a Render
+    # disk mount path set before the disk was actually attached), create it
+    # rather than letting sqlite3 fail to open the file entirely.
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
