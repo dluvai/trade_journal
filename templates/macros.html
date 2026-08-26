@@ -4,7 +4,7 @@
 <div class="panel" style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
   <h2 style="margin:0;">Currency</h2>
   <select id="ccySwitcher" class="macro-input" style="width:auto; font-family:var(--font-mono); font-size:14px; padding:7px 12px;"></select>
-  <span style="color:var(--text-muted); font-size:11.5px;">Shows this currency's macro details below and automatically compares it against USD.</span>
+  <span style="color:var(--text-muted); font-size:11.5px;">Shows this currency's macro details below.</span>
 </div>
 <div class="panel" id="debtPanel" style="display:none;">
   <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
@@ -12,11 +12,10 @@
 </div>
 <div class="panel">
   <h2>Fundamental bias check</h2>
-  <div class="form-grid" style="grid-template-columns: 1fr;">
-    <div class="field"><label>Pair</label><input type="text" id="biasPair" placeholder="EURUSD"></div>
-  </div>
-  <div class="form-actions">
-    <button class="btn-primary" id="checkFundamentalsBtn">Compare currencies</button>
+  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
+    <span style="font-family:var(--font-mono); font-weight:600; font-size:14px;" id="biasBaseLabel">USD</span>
+    <span style="color:var(--text-muted); font-size:12px;">vs</span>
+    <select id="compareCcy" class="macro-input" style="width:auto; font-family:var(--font-mono); font-size:14px; padding:7px 12px;"></select>
     <span id="biasError" style="color:var(--critical); font-size:12px;"></span>
   </div>
   <div id="fundamentalsResult" style="margin-top:16px;"></div>
@@ -209,22 +208,30 @@ function computeGoldBias(usdRow) {
   return { bias, realYield };
 }
 
-// The dropdown both drives the workspace below it AND auto-runs the
-// fundamental bias check against USD (or, if USD itself is selected,
-// against EUR -- the single most-quoted pair globally, so there's always
-// something to show rather than a dead state) -- one control doing what
-// used to take picking a currency AND separately typing+submitting a pair.
-function autoPairFor(ccy) {
-  const other = ccy === 'USD' ? 'EUR' : 'USD';
-  const [base, quote] = orderPair(ccy, other);
-  return base + quote;
+// The currency dropdown drives the workspace below it AND the fundamental
+// bias check's base currency; a second dropdown picks what to compare it
+// against (any other major -- EUR, JPY, GBP, whatever), defaulting to USD
+// (or EUR specifically when USD itself is the base, so there's always a
+// real comparison rather than a dead state). Both changes auto-run the
+// comparison immediately -- no button, no typing a pair.
+function defaultCompareFor(ccy) {
+  return ccy === 'USD' ? 'EUR' : 'USD';
+}
+
+function populateCompareDropdown() {
+  const sel = document.getElementById('compareCcy');
+  const current = sel.value;
+  const options = CCY_ORDER.filter(c => c !== selectedCcy);
+  sel.innerHTML = options.map(c => `<option value="${c}">${c}</option>`).join('');
+  sel.value = options.includes(current) ? current : defaultCompareFor(selectedCcy);
 }
 
 function onCcyChange() {
   renderMacroWorkspace(LATEST_MACRO_ROWS);
   document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
   loadCcyNews();
-  document.getElementById('biasPair').value = autoPairFor(selectedCcy);
+  document.getElementById('biasBaseLabel').textContent = selectedCcy;
+  populateCompareDropdown();
   loadFundamentals();
 }
 
@@ -397,19 +404,19 @@ function renderFundamentals(host, data) {
 }
 
 async function loadFundamentals() {
-  const pair = document.getElementById('biasPair').value.trim().toUpperCase();
+  const compareCcy = document.getElementById('compareCcy').value;
   const errEl = document.getElementById('biasError');
   const resultEl = document.getElementById('fundamentalsResult');
   errEl.textContent = '';
-  if (!pair) { resultEl.innerHTML = ''; return; }
-  const r = await fetch(`/api/fundamentals/${pair}`);
+  if (!compareCcy) { resultEl.innerHTML = ''; return; }
+  const [base, quote] = orderPair(selectedCcy, compareCcy);
+  const r = await fetch(`/api/fundamentals/${base}${quote}`);
   const data = await r.json();
   if (!r.ok) { errEl.textContent = data.error || 'Error'; resultEl.innerHTML = ''; return; }
   renderFundamentals(resultEl, data);
 }
 
-document.getElementById('checkFundamentalsBtn').addEventListener('click', loadFundamentals);
-document.getElementById('biasPair').addEventListener('change', loadFundamentals);
+document.getElementById('compareCcy').addEventListener('change', loadFundamentals);
 
 // ---------- market news (own data, own styling -- see market_data.py) ----------
 
@@ -481,7 +488,8 @@ async function loadCcyNews() {
   loadRateCalendar();
   loadDebtSnapshot();
   loadCcyNews();
-  document.getElementById('biasPair').value = autoPairFor(selectedCcy);
+  document.getElementById('biasBaseLabel').textContent = selectedCcy;
+  populateCompareDropdown();
   loadFundamentals();
   setInterval(loadCcyNews, 60000);
 })();
