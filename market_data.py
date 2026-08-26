@@ -201,7 +201,7 @@ _MAJORS_FEED = ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X"]
 
 def get_currency_news(currency):
     queries = CURRENCY_NEWS_QUERIES.get(currency, _MAJORS_FEED)
-    return _cached(f"news_{currency}", 300, lambda: _filter_market_moving(_fetch_news_for_queries(queries)))
+    return _cached(f"news_{currency}", 60, lambda: _filter_market_moving(_fetch_news_for_queries(queries)))
 
 
 _DESCRIPTION_PATTERNS = [

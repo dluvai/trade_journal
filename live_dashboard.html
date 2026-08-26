@@ -647,13 +647,27 @@ function countdownLabel(timeUtc) {
   return `in ${mins}m`;
 }
 
+// An event is still worth showing once its own date has passed (no exact
+// time -- e.g. BOJ) only through the end of that calendar day; with an
+// exact time, it drops off once countdownLabel would stop calling it
+// "Just released" (60 min past) -- otherwise a release from days ago would
+// sit in the list forever, since the backend's own filtering only recomputes
+// "today" once per cache cycle, not on every request.
+function isStillRelevant(e) {
+  if (e.time_utc) return Date.now() - new Date(e.time_utc).getTime() < 60 * 60000;
+  const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in the viewer's own timezone
+  return e.date >= todayLocal;
+}
+
 // Filters the already-fetched events by whichever currency is selected in
-// the switcher -- no new network request needed, the full fortnight's
-// events are small enough to just fetch once and filter client-side.
+// the switcher, plus whether they're still current -- no new network
+// request needed for this filtering, loadCalendarStrip() separately
+// refetches the underlying list on an interval (see init below) so newly
+// in-range events show up without a full page reload.
 function renderCalendarStrip() {
   const host = document.getElementById('calendarStrip');
   if (CALENDAR_EVENTS_CACHE === null) { host.innerHTML = '<div class="empty">Calendar unavailable right now.</div>'; return; }
-  const events = CALENDAR_EVENTS_CACHE.filter(e => e.currency === selectedCcy);
+  const events = CALENDAR_EVENTS_CACHE.filter(e => e.currency === selectedCcy && isStillRelevant(e));
   if (!events.length) {
     host.innerHTML = `<div class="empty">Nothing scheduled for ${selectedCcy} in the next two weeks (or FRED_API_KEY isn't set, so only rate decisions would show).</div>`;
     return;
@@ -993,7 +1007,8 @@ DC.setupTabs();
   loadCcyNews();
   loadTicker();
   setInterval(loadTicker, 3000);
-  setInterval(loadCcyNews, 5 * 60000);
+  setInterval(loadCcyNews, 60000);
+  setInterval(loadCalendarStrip, 5 * 60000);
 })();
 </script>
 </body>

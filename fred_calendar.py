@@ -67,9 +67,6 @@ RELEASE_LABELS = {
     53: "GDP",
 }
 
-_cache = {}
-
-
 def _fetch_release_dates(release_id, api_key, limit=1):
     params = {
         "release_id": release_id,
@@ -87,6 +84,32 @@ def _fetch_release_dates(release_id, api_key, limit=1):
     return [d["date"] for d in data.get("release_dates", [])]
 
 
+# Cached per release_id, not per merged result -- a merged-list-level cache
+# means one flaky release_id (a single transient timeout) drags every OTHER
+# release_id's already-fetched dates down with it for the full TTL, since
+# they're all baked into one cached blob together. Caching each release_id
+# independently means a failure only affects that one release: it falls
+# back to serving its own last-known-good dates (still correct, just
+# possibly a few hours stale) instead of vanishing from the calendar
+# entirely.
+_release_cache = {}
+_RELEASE_TTL_SECONDS = 6 * 3600
+
+
+def _get_release_dates(release_id, api_key, limit=5):
+    hit = _release_cache.get(release_id)
+    if hit and time.time() - hit[0] < _RELEASE_TTL_SECONDS:
+        return hit[1]
+    try:
+        dates = _fetch_release_dates(release_id, api_key, limit=limit)
+        _release_cache[release_id] = (time.time(), dates)
+        return dates
+    except Exception:
+        if hit:
+            return hit[1]  # serve the stale-but-real dates rather than nothing
+        return []
+
+
 def _time_utc_for(d_obj):
     hour, minute = RELEASE_TIME_ET
     local = datetime(d_obj.year, d_obj.month, d_obj.day, hour, minute, tzinfo=ZoneInfo("America/New_York"))
@@ -101,26 +124,13 @@ def next_release_dates():
     if not api_key:
         return {}
 
-    hit = _cache.get("next_dates")
-    if hit and time.time() - hit[0] < 6 * 3600:
-        return hit[1]
-
     result = {}
     seen_releases = {}
-    any_success = False
     for metric, release_id in METRIC_RELEASE_IDS.items():
         if release_id not in seen_releases:
-            try:
-                dates = _fetch_release_dates(release_id, api_key)
-                seen_releases[release_id] = dates[0] if dates else None
-                any_success = True
-            except Exception:
-                seen_releases[release_id] = None
+            dates = _get_release_dates(release_id, api_key, limit=1)
+            seen_releases[release_id] = dates[0] if dates else None
         result[metric] = seen_releases[release_id]
-
-    # See upcoming_events() for why a total failure isn't cached for the
-    # full 6 hours.
-    _cache["next_dates"] = (time.time(), result) if any_success else (time.time() - 6 * 3600 + 60, result)
     return result
 
 
@@ -133,32 +143,14 @@ def upcoming_events(days_ahead=14):
     if not api_key:
         return []
 
-    hit = _cache.get("upcoming")
-    if hit and time.time() - hit[0] < 6 * 3600:
-        return hit[1]
-
     today = date.today()
     cutoff = today + timedelta(days=days_ahead)
     events = []
-    any_success = False
     for release_id, label in RELEASE_LABELS.items():
-        try:
-            dates = _fetch_release_dates(release_id, api_key, limit=5)
-            any_success = True
-        except Exception:
-            continue
-        for d in dates:
+        for d in _get_release_dates(release_id, api_key, limit=5):
             d_obj = datetime.strptime(d, "%Y-%m-%d").date()
             if today <= d_obj <= cutoff:
                 events.append({"date": d, "currency": "USD", "label": label, "time_utc": _time_utc_for(d_obj)})
-
-    # Only cache for the full 6 hours if at least one release actually came
-    # back -- if every fetch failed (a transient network hiccup, same kind
-    # seen hitting FRED from debt_model.py), that's not "nothing scheduled",
-    # it's "couldn't check". Caching that for 6 hours would turn one bad
-    # moment into 6 hours of a wrongly-empty calendar, so a total failure
-    # gets remembered for 1 minute instead, and the next request retries.
-    _cache["upcoming"] = (time.time(), events) if any_success else (time.time() - 6 * 3600 + 60, events)
     return events
 
 
