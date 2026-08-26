@@ -948,34 +948,10 @@ const DC = (function () {
     });
   }
 
-  // ---------- sidebar (hover-to-reveal, pinnable, present on every page) ----------
-
-  function initSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    const pinBtn = document.getElementById('sidebarPinBtn');
-
-    function applyPinned(pinned) {
-      sidebar.classList.toggle('pinned', pinned);
-      document.body.classList.toggle('sidebar-pinned', pinned);
-      if (pinBtn) pinBtn.classList.toggle('active', pinned);
-    }
-
-    applyPinned(localStorage.getItem('sidebarPinned') === 'true');
-
-    if (pinBtn) {
-      pinBtn.addEventListener('click', () => {
-        const pinned = !sidebar.classList.contains('pinned');
-        applyPinned(pinned);
-        localStorage.setItem('sidebarPinned', pinned ? 'true' : 'false');
-      });
-    }
-  }
-
   return {
     fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
     apiSend, fetchTrades, fetchStrategies, deleteTrade,
-    initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initSidebar,
+    initTicker, initTradeModal, openAddTradeModal, openEditTradeModal,
   };
 })();

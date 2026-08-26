@@ -72,6 +72,11 @@ backup.backup_if_needed()
 auto_sync.start()
 
 app = Flask(__name__)
+# Templates are cached by default once debug=False -- Render restarts the
+# whole process on every deploy anyway (so it'd never matter there), but
+# without this a local dev edit to a .html template needs a server restart
+# to show up, same as a .py change would.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD")
 

@@ -428,50 +428,46 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
   .ticker-track { animation: none; overflow-x: auto; }
 }
 
-/* hover-to-reveal sidebar (multi-page live app) -- collapsed to a slim icon
-   rail by default, expands on hover/focus or when pinned. Reuses only the
-   existing theme tokens, no new colors. */
+/* hover-to-reveal sidebar (multi-page live app) -- closed to just the logo
+   by default, opens (nav links fade in, rail widens) on hover/focus, and
+   closes again the moment the pointer leaves. No pinning -- it's purely a
+   CSS hover state, no state to persist. Reuses only the existing theme
+   tokens, no new colors. */
 .sidebar {
   position: fixed; top: 0; left: 0; bottom: 0; width: 60px; z-index: 80;
   background: var(--surface-1); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
   transition: width .18s ease, box-shadow .18s ease;
 }
-.sidebar:hover, .sidebar:focus-within, .sidebar.pinned {
+.sidebar:hover, .sidebar:focus-within {
   width: 220px; box-shadow: 12px 0 32px -18px rgba(0,0,0,0.5);
 }
 .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 18px 20px; white-space: nowrap; flex: none; }
 .sidebar-brand svg { flex: none; color: var(--series-1); }
 .sidebar-brand span { font-size: 13.5px; font-weight: 700; color: var(--text-primary); opacity: 0; transition: opacity .15s; }
-.sidebar:hover .sidebar-brand span, .sidebar:focus-within .sidebar-brand span, .sidebar.pinned .sidebar-brand span { opacity: 1; }
-.sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 8px; overflow-y: auto; overflow-x: hidden; }
+.sidebar:hover .sidebar-brand span, .sidebar:focus-within .sidebar-brand span { opacity: 1; }
+.sidebar-nav {
+  flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 8px; overflow-y: auto; overflow-x: hidden;
+  opacity: 0; pointer-events: none; transition: opacity .15s;
+}
+.sidebar:hover .sidebar-nav, .sidebar:focus-within .sidebar-nav { opacity: 1; pointer-events: auto; }
 .nav-item {
   display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-radius: 7px;
   color: var(--text-secondary); text-decoration: none; white-space: nowrap; flex: none;
 }
 .nav-item svg { flex: none; width: 18px; height: 18px; }
-.nav-item span { opacity: 0; transition: opacity .15s; font-size: 13px; font-weight: 600; }
-.sidebar:hover .nav-item span, .sidebar:focus-within .nav-item span, .sidebar.pinned .nav-item span { opacity: 1; }
 .nav-item:hover { background: var(--surface-2); color: var(--text-primary); }
 .nav-item.active { background: var(--series-1-soft); color: var(--series-1); }
 .nav-item:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
-.sidebar-pin { flex: none; padding: 8px; }
-.sidebar-pin button {
-  display: flex; align-items: center; gap: 14px; width: 100%; padding: 10px 12px; border-radius: 7px;
-  border: none; background: transparent; color: var(--text-muted); cursor: pointer; white-space: nowrap;
-}
-.sidebar-pin button svg { flex: none; width: 16px; height: 16px; }
-.sidebar-pin button span { opacity: 0; transition: opacity .15s; font-size: 12px; font-weight: 600; }
-.sidebar:hover .sidebar-pin button span, .sidebar:focus-within .sidebar-pin button span, .sidebar.pinned .sidebar-pin button span { opacity: 1; }
-.sidebar-pin button:hover { background: var(--surface-2); color: var(--text-primary); }
-.sidebar-pin button.active { color: var(--series-1); }
 
-/* Unpinned: sidebar overlays content, page keeps its collapsed-width margin.
-   Pinned: page reflows to make room for the fully expanded rail. */
+/* Content shifts over while the sidebar's open, rather than the sidebar
+   overlaying it -- an overlay would only cover its own width, slicing
+   through anything (like the header title) that happens to straddle that
+   edge instead of fully hiding it. */
 .page-shell { margin-left: 60px; transition: margin-left .18s ease; }
-body.sidebar-pinned .page-shell { margin-left: 220px; }
+body:has(.sidebar:hover) .page-shell, body:has(.sidebar:focus-within) .page-shell { margin-left: 220px; }
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .page-shell, .nav-item span, .sidebar-brand span, .sidebar-pin button span { transition: none !important; }
+  .sidebar, .sidebar-nav, .sidebar-brand span, .page-shell { transition: none !important; }
 }
 
 .news-panel-body { margin-top: 4px; }

@@ -34,23 +34,7 @@
     </a>
     {% endfor %}
   </div>
-  <div class="sidebar-pin">
-    <button type="button" id="sidebarPinBtn" title="Pin sidebar open">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l1 6 3 2v2H5v-2l3-2z"/></svg>
-      <span>Pin sidebar</span>
-    </button>
-  </div>
 </nav>
-<script>
-  // Applied synchronously, before the rest of the page paints, so a pinned
-  // sidebar doesn't visibly flash collapsed-then-expand on every navigation.
-  (function () {
-    if (localStorage.getItem('sidebarPinned') === 'true') {
-      document.getElementById('sidebar').classList.add('pinned');
-      document.body.classList.add('sidebar-pinned');
-    }
-  })();
-</script>
 
 <div class="page-shell">
   <div class="wrap">
@@ -126,7 +110,6 @@
 
 <script src="/dashboard-core.js"></script>
 <script>
-  DC.initSidebar();
   DC.initTicker();
   DC.initTradeModal();
 </script>
