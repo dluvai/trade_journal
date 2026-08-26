@@ -429,7 +429,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 }
 
 .news-panel-body { margin-top: 4px; }
-.news-item { display: block; padding: 12px 2px; border-bottom: 1px solid var(--border); text-decoration: none; }
+.news-item { display: block; padding: 12px 2px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .news-item:last-child { border-bottom: none; }
 .news-item:hover .news-title { color: var(--series-1); }
 .news-title { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.45; }

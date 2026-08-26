@@ -180,6 +180,22 @@
   </div>
 </div>
 
+<div class="modal-backdrop hidden" id="newsModalBackdrop">
+  <div class="modal reflection-modal">
+    <button type="button" class="modal-close-x" id="newsModalClose">&times;</button>
+    <div class="reflection-modal-header">
+      <div class="reflection-modal-date" id="newsModalMeta"></div>
+      <div class="reflection-modal-pair" id="newsModalTitle"></div>
+    </div>
+    <div class="reflection-modal-body">
+      <div id="newsModalSummary"></div>
+      <div class="form-actions" style="margin-top:18px;">
+        <a class="btn-primary" id="newsModalLink" href="#" target="_blank" rel="noopener" style="text-decoration:none; display:inline-block;">Read full article →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop hidden" id="strategyModalBackdrop">
   <div class="modal">
     <h2>Create strategy</h2>
@@ -701,27 +717,56 @@ function fmtPrice(v) {
   return v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-function tickerItemHtml(q) {
+function tickerChangeParts(q) {
   const cls = q.changePct == null ? 'flat' : (q.changePct > 0 ? 'good' : (q.changePct < 0 ? 'critical' : 'flat'));
   const arrow = q.changePct > 0 ? '▲' : (q.changePct < 0 ? '▼' : '·');
   const pct = q.changePct == null ? '—' : `${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%`;
-  return `<div class="ticker-item">
+  return { cls, text: `${arrow} ${pct}` };
+}
+
+function tickerItemHtml(q) {
+  const { cls, text } = tickerChangeParts(q);
+  return `<div class="ticker-item" data-symbol="${q.symbol}">
     <span class="ti-label">${q.label}</span>
     <span class="ti-price">${fmtPrice(q.price)}</span>
-    <span class="ti-change ${cls}">${arrow} ${pct}</span>
+    <span class="ti-change ${cls}">${text}</span>
   </div>`;
 }
 
+// The strip scrolls via a single continuous CSS animation on .ticker-track
+// (see .ticker-strip:hover pausing it in dashboard-core.css). Replacing that
+// element's innerHTML on every refresh would restart the animation from 0%
+// every time -- a visible stutter every 20s. So after the first paint, later
+// refreshes patch each item's text in place and never touch .ticker-track
+// itself, keeping the scroll running with zero interruption.
 async function loadTicker() {
   const host = document.getElementById('tickerStrip');
+  let quotes;
   try {
-    const quotes = await (await fetch('/api/prices')).json();
-    const itemsHtml = quotes.map(tickerItemHtml).join('');
-    // duplicated back-to-back so the scroll animation loops with no seam
-    host.innerHTML = `<div class="ticker-track">${itemsHtml}${itemsHtml}</div>`;
+    quotes = await (await fetch('/api/prices')).json();
   } catch (e) {
-    host.innerHTML = '<div class="ticker-item ti-label">Live prices unavailable right now</div>';
+    if (!host.querySelector('.ticker-track')) {
+      host.innerHTML = '<div class="ticker-item ti-label">Live prices unavailable right now</div>';
+    }
+    return; // a transient failure keeps whatever was already scrolling, rather than wiping it
   }
+
+  if (!host.querySelector('.ticker-track')) {
+    const itemsHtml = quotes.map(tickerItemHtml).join('');
+    // duplicated back-to-back so the loop has no visible seam
+    host.innerHTML = `<div class="ticker-track">${itemsHtml}${itemsHtml}</div>`;
+    return;
+  }
+
+  quotes.forEach(q => {
+    const { cls, text } = tickerChangeParts(q);
+    host.querySelectorAll(`.ticker-item[data-symbol="${q.symbol}"]`).forEach(el => {
+      el.querySelector('.ti-price').textContent = fmtPrice(q.price);
+      const changeEl = el.querySelector('.ti-change');
+      changeEl.textContent = text;
+      changeEl.className = `ti-change ${cls}`;
+    });
+  });
 }
 
 function timeAgo(unixSeconds) {
@@ -731,14 +776,39 @@ function timeAgo(unixSeconds) {
   return `${Math.round(diff / 86400)}d ago`;
 }
 
+let NEWS_ITEM_CACHE = [];
+
 function renderNewsItems(host, items) {
+  NEWS_ITEM_CACHE = items;
   if (!items.length) { host.innerHTML = '<div class="empty">No news available right now.</div>'; return; }
-  host.innerHTML = items.map(n => `
-    <a class="news-item" href="${n.link}" target="_blank" rel="noopener">
+  host.innerHTML = items.map((n, i) => `
+    <div class="news-item" data-news-idx="${i}" role="button" tabindex="0">
       <div class="news-title">${n.title}</div>
       <div class="news-meta">${n.publisher}${n.time ? ' · ' + timeAgo(n.time) : ''}</div>
-    </a>`).join('');
+    </div>`).join('');
+  host.querySelectorAll('[data-news-idx]').forEach(el => {
+    el.addEventListener('click', () => openNewsModal(NEWS_ITEM_CACHE[Number(el.dataset.newsIdx)]));
+  });
 }
+
+// A summary here is genuinely just the headline -- Yahoo's search API (our
+// news source) doesn't return article body text or a snippet, only
+// title/publisher/time/link. Rather than fabricate summary text that was
+// never actually in the source, the popup shows the headline large and
+// sends you to the real article for the rest.
+function openNewsModal(item) {
+  if (!item) return;
+  document.getElementById('newsModalMeta').textContent = `${item.publisher}${item.time ? ' · ' + timeAgo(item.time) : ''}`;
+  document.getElementById('newsModalTitle').textContent = item.title;
+  document.getElementById('newsModalSummary').textContent = '';
+  document.getElementById('newsModalLink').href = item.link;
+  document.getElementById('newsModalBackdrop').classList.remove('hidden');
+}
+
+const newsModalBackdrop = document.getElementById('newsModalBackdrop');
+document.getElementById('newsModalClose').addEventListener('click', () => newsModalBackdrop.classList.add('hidden'));
+newsModalBackdrop.addEventListener('click', (e) => { if (e.target === newsModalBackdrop) newsModalBackdrop.classList.add('hidden'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !newsModalBackdrop.classList.contains('hidden')) newsModalBackdrop.classList.add('hidden'); });
 
 // Bias Check's news panel follows whichever currency is selected -- EUR/GBP/AUD/NZD
 // get a real currency-specific feed; USD/JPY/CHF fall back to the combined majors
