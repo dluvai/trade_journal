@@ -14,6 +14,7 @@ funding basis, not the futures curve, so this is the closer of the two.
 Both fetchers cache their result in memory for a short window so a
 dashboard left open polling every 20-30s doesn't hammer Yahoo on every tab.
 """
+import concurrent.futures
 import html
 import json
 import re
@@ -57,26 +58,34 @@ def _get_json(url, params=None):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _fetch_one_quote(job):
+    symbol, label = job
+    entry = {"symbol": symbol, "label": label, "price": None, "change": None, "changePct": None}
+    try:
+        meta = _get_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}")["chart"]["result"][0]["meta"]
+        price = meta.get("regularMarketPrice")
+        prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+        if price is not None and prev:
+            entry["price"] = price
+            entry["change"] = price - prev
+            entry["changePct"] = (price - prev) / prev * 100
+    except Exception:
+        pass  # leave this one symbol blank rather than fail the whole ticker
+    return entry
+
+
 def _fetch_quotes():
-    quotes = []
-    for symbol, label in SYMBOLS:
-        entry = {"symbol": symbol, "label": label, "price": None, "change": None, "changePct": None}
-        try:
-            meta = _get_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}")["chart"]["result"][0]["meta"]
-            price = meta.get("regularMarketPrice")
-            prev = meta.get("chartPreviousClose") or meta.get("previousClose")
-            if price is not None and prev:
-                entry["price"] = price
-                entry["change"] = price - prev
-                entry["changePct"] = (price - prev) / prev * 100
-        except Exception:
-            pass  # leave this one symbol blank rather than fail the whole ticker
-        quotes.append(entry)
-    return quotes
+    # 10 independent requests -- same reasoning as fred_sync.sync(): these
+    # are network waits, so a small thread pool gets all 10 back in roughly
+    # the time of the single slowest one instead of the sum of all ten.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(_fetch_one_quote, SYMBOLS))
+    by_symbol = {r["symbol"]: r for r in results}
+    return [by_symbol[symbol] for symbol, _ in SYMBOLS]
 
 
 def get_quotes():
-    return _cached("quotes", 20, _fetch_quotes)
+    return _cached("quotes", 8, _fetch_quotes)
 
 
 def _fetch_news_for_queries(queries, limit=15):

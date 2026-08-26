@@ -32,6 +32,7 @@ Coverage, and not every metric for every currency:
 Run standalone to see exactly what it would fetch:
     python fred_sync.py
 """
+import concurrent.futures
 import csv
 import io
 import urllib.request
@@ -197,45 +198,65 @@ def fetch_metric(series_id, mode):
     return _yoy(rows)
 
 
+def _fetch_one(job):
+    ccy, metric, spec = job
+    series_id, mode = spec[0], spec[1]
+    scale = spec[2] if len(spec) > 2 else 1
+    try:
+        as_of, value = fetch_metric(series_id, mode)
+    except Exception as e:
+        return ccy, metric, series_id, None, None, str(e)
+    if value is not None and scale != 1:
+        value = round(value * scale, 2)
+    return ccy, metric, series_id, as_of, value, None
+
+
 def sync(currencies=None, dry_run=False):
     """Pull the covered metrics for each currency and merge them into the
     macro table -- manually-entered fields not covered here (PMI, bias,
     notes, and anything for uncovered currencies) are left untouched."""
     currencies = currencies or list(SERIES.keys())
     existing_by_ccy = {r["currency"]: r for r in db.list_macro()}
-    report = {}
+    report = {ccy: {} for ccy in currencies}
+    fetched_by_ccy = {ccy: {} for ccy in currencies}
 
-    for ccy in currencies:
-        metrics = SERIES.get(ccy, {})
-        detail = {}
-        fetched = {}
-        for metric, spec in metrics.items():
-            series_id, mode = spec[0], spec[1]
-            scale = spec[2] if len(spec) > 2 else 1
-            try:
-                as_of, value = fetch_metric(series_id, mode)
-            except Exception as e:
-                detail[metric] = {"series_id": series_id, "error": str(e)}
+    jobs = [(ccy, metric, spec) for ccy in currencies for metric, spec in SERIES.get(ccy, {}).items()]
+
+    # ~30-40 independent FRED requests across every currency -- these are
+    # pure network waits, not CPU work, so a thread pool genuinely
+    # parallelizes them despite the GIL (urllib releases it while blocked on
+    # the socket). Measured by hand: capping this at max_workers=10 still
+    # took ~21s, because once 10 are in flight the 11th has to wait for a
+    # slot to free rather than starting immediately -- a couple of slow
+    # FRED responses in the first batch delay every batch behind them. One
+    # worker per job removes that queueing entirely: total time drops to
+    # ~6s, bounded by the single slowest request instead of by batches of
+    # stragglers compounding.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs) or 1) as pool:
+        results = list(pool.map(_fetch_one, jobs))
+
+    for ccy, metric, series_id, as_of, value, error in results:
+        if error is not None:
+            report[ccy][metric] = {"series_id": series_id, "error": error}
+            continue
+        report[ccy][metric] = {
+            "series_id": series_id, "as_of": str(as_of) if as_of else None,
+            "value": value, "note": PROXY_NOTES.get((ccy, metric)),
+        }
+        if value is not None:
+            fetched_by_ccy[ccy][metric] = value
+
+    if not dry_run:
+        for ccy in currencies:
+            fetched = fetched_by_ccy[ccy]
+            if not fetched:
                 continue
-            if value is not None and scale != 1:
-                value = round(value * scale, 2)
-            note = PROXY_NOTES.get((ccy, metric))
-            detail[metric] = {
-                "series_id": series_id, "as_of": str(as_of) if as_of else None,
-                "value": value, "note": note,
-            }
-            if value is not None:
-                fetched[metric] = value
-
-        if fetched and not dry_run:
             existing = existing_by_ccy.get(ccy, {})
             merged = {key: existing.get(key) for key in db.MACRO_METRIC_KEYS}
             merged["bias"] = existing.get("bias")
             merged["notes"] = existing.get("notes")
             merged.update(fetched)
             db.upsert_macro(ccy, merged)
-
-        report[ccy] = detail
 
     return report
 

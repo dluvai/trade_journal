@@ -18,7 +18,6 @@
     </div>
     <div class="controls">
       <div class="segmented" id="yearFilter"></div>
-      <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
       <button class="btn-primary" id="addTradeBtn">+ Add trade</button>
     </div>
   </header>
@@ -29,7 +28,7 @@
     <button class="tab-btn active" data-tab="overview">Overview</button>
     <button class="tab-btn" data-tab="trades">Trades</button>
     <button class="tab-btn" data-tab="pairs">Pairs</button>
-    <button class="tab-btn" data-tab="bias">Bias Check</button>
+    <button class="tab-btn" data-tab="bias">Macros</button>
     <button class="tab-btn" data-tab="strategy">Strategy</button>
   </div>
 
@@ -70,6 +69,9 @@
   </div>
 
   <div class="tab-panel" id="tab-trades">
+    <div class="form-actions" style="margin-bottom:14px;">
+      <button class="iconbtn" id="exportCsvBtnTrades">Export CSV</button>
+    </div>
     <div id="bestWorstTrades"></div>
     <div class="panel">
       <h2>Trade calendar</h2>
@@ -92,6 +94,9 @@
   </div>
 
   <div class="tab-panel" id="tab-bias">
+    <div class="form-actions" style="margin-bottom:14px;">
+      <button class="iconbtn" id="exportCsvBtnBias">Export CSV</button>
+    </div>
     <div class="panel" id="debtPanel" style="display:none;">
       <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
       <div id="debtContent"></div>
@@ -328,9 +333,11 @@ async function onDelete(id) {
   await refreshAndRender();
 }
 
-document.getElementById('exportCsvBtn').addEventListener('click', () => {
+function exportCsvNow() {
   DC.exportCsv(ALL_TRADES, `trade_journal_export_${new Date().toISOString().slice(0, 10)}.csv`);
-});
+}
+document.getElementById('exportCsvBtnTrades').addEventListener('click', exportCsvNow);
+document.getElementById('exportCsvBtnBias').addEventListener('click', exportCsvNow);
 
 // ---------- strategy & macro snapshot ----------
 
@@ -839,7 +846,7 @@ DC.setupTabs();
   loadDebtSnapshot();
   loadCcyNews();
   loadTicker();
-  setInterval(loadTicker, 20000);
+  setInterval(loadTicker, 8000);
   setInterval(loadCcyNews, 5 * 60000);
 })();
 </script>
