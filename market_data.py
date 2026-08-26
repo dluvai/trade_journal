@@ -85,7 +85,7 @@ def _fetch_quotes():
 
 
 def get_quotes():
-    return _cached("quotes", 8, _fetch_quotes)
+    return _cached("quotes", 3, _fetch_quotes)
 
 
 def _fetch_news_for_queries(queries, limit=15):
