@@ -33,13 +33,19 @@
     {% endfor %}
   </div>
 </nav>
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
 <div class="page-shell">
   <div class="wrap">
     <header>
-      <div>
-        <h1>Felix Trade Journal</h1>
-        <div class="sub" id="subhead"></div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button type="button" class="sidebar-hamburger" id="sidebarHamburger" aria-label="Open navigation">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div>
+          <h1>Felix Trade Journal</h1>
+          <div class="sub" id="subhead"></div>
+        </div>
       </div>
       <div class="controls">
         {% block header_controls %}{% endblock %}
@@ -110,6 +116,7 @@
 <script>
   DC.initTicker();
   DC.initTradeModal();
+  DC.initMobileSidebar();
 </script>
 {% block scripts %}{% endblock %}
 </body>

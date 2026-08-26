@@ -948,10 +948,34 @@ const DC = (function () {
     });
   }
 
+  // ---------- mobile sidebar drawer (touch devices have no :hover) ----------
+
+  function initMobileSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const hamburger = document.getElementById('sidebarHamburger');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    if (!sidebar || !hamburger || !backdrop) return;
+
+    function close() {
+      sidebar.classList.remove('mobile-open');
+      backdrop.classList.remove('mobile-open');
+    }
+    function open() {
+      sidebar.classList.add('mobile-open');
+      backdrop.classList.add('mobile-open');
+    }
+
+    hamburger.addEventListener('click', () => {
+      sidebar.classList.contains('mobile-open') ? close() : open();
+    });
+    backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  }
+
   return {
     fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
     apiSend, fetchTrades, fetchStrategies, deleteTrade,
-    initTicker, initTradeModal, openAddTradeModal, openEditTradeModal,
+    initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initMobileSidebar,
   };
 })();
