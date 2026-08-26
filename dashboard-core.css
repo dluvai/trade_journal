@@ -117,8 +117,14 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; margin-bottom: 18px; background: var(--border); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow); }
-.tile { background: linear-gradient(160deg, color-mix(in srgb, var(--series-1) 5%, var(--surface-1)) 0%, var(--surface-1) 65%); padding: 14px 16px; }
+/* Flat, identical color on both the grid and each cell on purpose -- with
+   auto-fit columns, the tile count rarely divides evenly into the row
+   width, so the container's own background shows through the leftover
+   space in the last row. A gradient or divider-gap trick there would make
+   that leftover space look like a visibly different, mismatched block;
+   a single flat color makes it disappear instead. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 18px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow); }
+.tile { background: var(--surface-1); padding: 14px 16px; }
 .tile .label { font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
 .tile .value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 21px; font-weight: 600; margin-top: 7px; }
 .tile .value.good { color: var(--good); }
