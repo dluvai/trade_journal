@@ -25,14 +25,23 @@
   --baseline:       rgba(238,241,244,0.16);
   --border:         rgba(238,241,244,0.09);
   --border-strong:  rgba(238,241,244,0.16);
-  --series-1:       #dd8a4f;
-  --series-1-soft:  rgba(221,138,79,0.16);
+  --series-1:       #6d7cf0;
+  --series-1-soft:  rgba(109,124,240,0.16);
   --info:           #5b9bd1;
   --good:           #45c988;
   --critical:       #f0655f;
   --muted-fill:     #3a4048;
   --warn:           #e2b34a;
   --shadow:         0 1px 0 rgba(238,241,244,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.65);
+  /* Single-hue sheen derived from --series-1 (lighter top-left, truer
+     middle, darker bottom-right) -- reused wherever the accent needs
+     gradient depth (buttons, active nav, badges) instead of a flat fill.
+     Auto-adapts per theme since it only ever mixes the current --series-1
+     with white/black, never a hardcoded color. */
+  --accent-gradient: linear-gradient(135deg,
+    color-mix(in srgb, var(--series-1) 90%, white) 0%,
+    var(--series-1) 55%,
+    color-mix(in srgb, var(--series-1) 85%, black) 100%);
 }
 @media (prefers-color-scheme: light) {
   :root {
@@ -47,8 +56,8 @@
     --baseline:       rgba(18,22,28,0.20);
     --border:         rgba(18,22,28,0.11);
     --border-strong:  rgba(18,22,28,0.20);
-    --series-1:       #b85a26;
-    --series-1-soft:  rgba(184,90,38,0.14);
+    --series-1:       #4338ca;
+    --series-1-soft:  rgba(67,56,202,0.14);
     --info:           #3574a5;
     --good:           #1f9d5c;
     --critical:       #cf3f3a;
@@ -84,7 +93,7 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
   border: none; background: transparent; color: var(--text-secondary); font-family: var(--font-mono);
   font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 5px; cursor: pointer;
 }
-.segmented button.active { background: var(--series-1); color: #fff; }
+.segmented button.active { background: var(--accent-gradient); color: #fff; }
 .iconbtn {
   border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary);
   font-family: var(--font-ui); font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer;
@@ -94,7 +103,7 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 .iconbtn.danger { color: var(--critical); }
 .iconbtn.danger:hover { border-color: var(--critical); }
 .btn-primary {
-  border: 1px solid var(--series-1); background: var(--series-1); color: #fff;
+  border: 1px solid var(--series-1); background: var(--accent-gradient); color: #fff;
   font-family: var(--font-ui); font-size: 12px; font-weight: 650; padding: 8px 14px; border-radius: 7px; cursor: pointer;
 }
 .btn-primary:hover { filter: brightness(1.08); }
@@ -103,13 +112,13 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 .tabs { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px; margin-bottom: 18px; }
 .tab-btn { border: none; background: transparent; color: var(--text-secondary); font-family: var(--font-ui); font-size: 12.5px; font-weight: 650; padding: 8px 16px; border-radius: 5px; cursor: pointer; }
 .tab-btn:hover { color: var(--text-primary); }
-.tab-btn.active { background: var(--series-1); color: #fff; }
+.tab-btn.active { background: var(--accent-gradient); color: #fff; }
 .tab-btn.active:hover { color: #fff; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; margin-bottom: 18px; background: var(--border); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow); }
-.tile { background: var(--surface-1); padding: 14px 16px; }
+.tile { background: linear-gradient(160deg, color-mix(in srgb, var(--series-1) 5%, var(--surface-1)) 0%, var(--surface-1) 65%); padding: 14px 16px; }
 .tile .label { font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
 .tile .value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 21px; font-weight: 600; margin-top: 7px; }
 .tile .value.good { color: var(--good); }
@@ -287,8 +296,8 @@ td.icon-cell { text-align: center; }
 /* best/worst cards */
 .bw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 16px; }
 .bw-card { background: var(--surface-1); border: 1px solid var(--border); border-left: 3px solid var(--muted-fill); border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow); }
-.bw-card.bw-good { border-left-color: var(--good); }
-.bw-card.bw-bad { border-left-color: var(--critical); }
+.bw-card.bw-good { border-left-color: var(--good); background: linear-gradient(135deg, color-mix(in srgb, var(--good) 6%, var(--surface-1)) 0%, var(--surface-1) 60%); }
+.bw-card.bw-bad { border-left-color: var(--critical); background: linear-gradient(135deg, color-mix(in srgb, var(--critical) 6%, var(--surface-1)) 0%, var(--surface-1) 60%); }
 .bw-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
 .bw-title { font-size: 16px; font-weight: 700; margin-top: 4px; }
 .bw-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 600; margin-top: 3px; }
@@ -304,13 +313,15 @@ td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric:
 td.strong { color: var(--text-primary); font-weight: 600; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
-.badge.WIN { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
-.badge.LOSS { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--critical); }
-.badge.BE { background: color-mix(in srgb, var(--muted-fill) 25%, transparent); color: var(--text-muted); }
-.badge.FLAG { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); margin-left: 6px; }
+/* Each badge's gradient uses only its own semantic color (never the brand
+   accent) -- status meaning and brand identity stay visually separate. */
+.badge.WIN { background: linear-gradient(135deg, color-mix(in srgb, var(--good) 26%, transparent), color-mix(in srgb, var(--good) 12%, transparent)); color: var(--good); }
+.badge.LOSS { background: linear-gradient(135deg, color-mix(in srgb, var(--critical) 26%, transparent), color-mix(in srgb, var(--critical) 12%, transparent)); color: var(--critical); }
+.badge.BE { background: linear-gradient(135deg, color-mix(in srgb, var(--muted-fill) 34%, transparent), color-mix(in srgb, var(--muted-fill) 18%, transparent)); color: var(--text-muted); }
+.badge.FLAG { background: linear-gradient(135deg, color-mix(in srgb, var(--warn) 30%, transparent), color-mix(in srgb, var(--warn) 14%, transparent)); color: var(--warn); margin-left: 6px; }
 
 .winbar-track { width: 60px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; flex: none; }
-.winbar-fill { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
+.winbar-fill { display: block; height: 100%; background: var(--accent-gradient); border-radius: 3px; }
 .winrate-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; }
 
 .notes-row td { color: var(--text-secondary); font-size: 12px; line-height: 1.5; background: var(--surface-2); }
@@ -367,7 +378,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 .metric-category-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px;
 }
-.metric-category-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+.metric-category-card { background: linear-gradient(160deg, color-mix(in srgb, var(--series-1) 4%, var(--surface-2)) 0%, var(--surface-2) 65%); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
 /* Wide cards (currently just Inflation, which can run to 6 rows -- taller
    than any other card) span 2 grid columns and lay their rows out in a
    2-column sub-grid instead of one long stack, so the card reads as a
@@ -453,7 +464,10 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
   width: 220px; box-shadow: 12px 0 32px -18px rgba(0,0,0,0.5);
 }
 .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 18px 20px; white-space: nowrap; flex: none; }
-.sidebar-brand svg { flex: none; color: var(--series-1); }
+.sidebar-brand svg {
+  flex: none; color: #fff; background: var(--accent-gradient); border-radius: 8px; padding: 6px;
+  width: 32px; height: 32px; box-sizing: border-box;
+}
 .sidebar-brand span { font-size: 13.5px; font-weight: 700; color: var(--text-primary); opacity: 0; transition: opacity .15s; }
 .sidebar:hover .sidebar-brand span, .sidebar:focus-within .sidebar-brand span { opacity: 1; }
 .sidebar-nav {
@@ -467,7 +481,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 }
 .nav-item svg { flex: none; width: 18px; height: 18px; }
 .nav-item:hover { background: var(--surface-2); color: var(--text-primary); }
-.nav-item.active { background: var(--series-1-soft); color: var(--series-1); }
+.nav-item.active { background: var(--accent-gradient); color: #fff; }
 .nav-item:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
 
 /* Content shifts over while the sidebar's open, rather than the sidebar
