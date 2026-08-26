@@ -31,16 +31,12 @@ METRIC_EXPLAINERS = {
         "contraction. Rising PMI usually supports the currency as it points to accelerating "
         "economic activity."
     ),
-    "cpi_yoy": (
-        "Rising inflation above target often pushes the central bank toward tightening "
-        "(rate hikes), which can be currency-supportive in the near term -- but persistently "
-        "high inflation erodes purchasing power and can weaken the currency over the long run. "
-        "Shown for context only; not scored, because direction depends on where inflation sits "
-        "relative to target."
-    ),
 }
 
-# (metric key, higher value = stronger currency)
+# (metric key, higher value = stronger currency). CPI deliberately isn't
+# scored -- its direction depends on where inflation sits relative to
+# target, not just whether it's higher or lower -- so it's left out of the
+# comparison entirely rather than shown unscored ("context only").
 SCORED_METRICS = [
     ("interest_rate", True),
     ("gdp_yoy", True),
@@ -67,29 +63,27 @@ def compare_pair(pair, macro_rows):
     if not base_row or not quote_row:
         return {"pair": pair, "base": base, "quote": quote, "supported": False}
 
+    # Only metrics both currencies actually have a real, distinct value for
+    # make the cut -- a metric missing on either side, or tied, has nothing
+    # meaningful to compare, so it's dropped entirely rather than shown as
+    # an unresolved "context only" row.
     scored_rows = []
     score = {"base": 0, "quote": 0}
     for key, higher_is_stronger in SCORED_METRICS:
         bv, qv = base_row.get(key), quote_row.get(key)
-        edge = None
-        if bv is not None and qv is not None and bv != qv:
-            edge = "base" if (bv > qv) == higher_is_stronger else "quote"
-            score[edge] += 1
+        if bv is None or qv is None or bv == qv:
+            continue
+        edge = "base" if (bv > qv) == higher_is_stronger else "quote"
+        score[edge] += 1
         scored_rows.append({
             "metric": key, "label": METRIC_LABELS[key],
             "base_value": bv, "quote_value": qv, "edge": edge,
             "note": METRIC_EXPLAINERS[key],
         })
 
-    cpi_row = {
-        "metric": "cpi_yoy", "label": METRIC_LABELS["cpi_yoy"],
-        "base_value": base_row.get("cpi_yoy"), "quote_value": quote_row.get("cpi_yoy"),
-        "edge": None, "note": METRIC_EXPLAINERS["cpi_yoy"],
-    }
-
     result = {
         "pair": pair, "base": base, "quote": quote, "supported": True,
-        "score": score, "scored_rows": scored_rows, "cpi_row": cpi_row,
+        "score": score, "scored_rows": scored_rows,
         "base_bias": base_row.get("bias"), "quote_bias": quote_row.get("bias"),
     }
     result["verdict"] = generate_verdict(result)
@@ -103,7 +97,7 @@ def generate_verdict(comparison):
     base, quote = comparison["base"], comparison["quote"]
     rows = comparison["scored_rows"]
     score = comparison["score"]
-    scored_count = sum(1 for r in rows if r["edge"])
+    scored_count = len(rows)
 
     if scored_count == 0:
         return (
@@ -137,15 +131,5 @@ def generate_verdict(comparison):
             sentence += f" {leader} has the edge on {join(lead_reasons)}."
         if trail_reasons:
             sentence += f" {trailer}'s only edge is {join(trail_reasons)}."
-
-    cpi = comparison["cpi_row"]
-    if cpi["base_value"] is not None and cpi["quote_value"] is not None and cpi["base_value"] != cpi["quote_value"]:
-        hotter = base if cpi["base_value"] > cpi["quote_value"] else quote
-        hv = cpi["base_value"] if hotter == base else cpi["quote_value"]
-        cv = cpi["quote_value"] if hotter == base else cpi["base_value"]
-        sentence += (
-            f" Inflation is running hotter in {hotter} ({hv}% vs {cv}%) -- not scored directly since "
-            f"it cuts both ways, but worth watching for how it shapes the next rate decision."
-        )
 
     return sentence

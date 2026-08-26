@@ -74,40 +74,58 @@ const FX_HIERARCHY = ['EUR', 'GBP', 'AUD', 'NZD', 'USD', 'CAD', 'CHF', 'JPY'];
 // universal (manual entry makes sense even where nothing auto-syncs), but
 // things like Core PCE are literally a US National Accounts concept -- no
 // point offering an input a non-USD currency can never have real data in.
+// Each metric's `note` explains, in plain terms, how it feeds into currency
+// strength -- shown as a hover tooltip on the card (see metricRowHtml).
+// Wording for interest_rate/unemployment/gdp_yoy/pmi/cpi_yoy matches
+// fundamentals.py's METRIC_EXPLAINERS for the ones both share.
 const METRIC_GROUPS = [
   { title: 'Policy', metrics: [
-    { key: 'interest_rate', label: 'Policy rate', suffix: '%', step: '0.01' },
+    { key: 'interest_rate', label: 'Policy rate', suffix: '%', step: '0.01',
+      note: 'Higher rates attract yield-seeking capital, which tends to support a currency; central banks raise rates to fight inflation or cool an overheating economy.' },
   ] },
   { title: 'Labor', metrics: [
-    { key: 'unemployment', label: 'Unemployment', suffix: '%', step: '0.01' },
-    { key: 'employment_change', label: 'Employment change', suffix: 'K', step: '1', applies: ['USD'] },
+    { key: 'unemployment', label: 'Unemployment', suffix: '%', step: '0.01',
+      note: 'A lower unemployment rate signals a tighter labor market and a stronger economy; rising unemployment is a classic recession warning and tends to weigh on the currency.' },
+    { key: 'employment_change', label: 'Employment change', suffix: 'K', step: '1', applies: ['USD'],
+      note: 'The net change in jobs for the month -- a strong print signals a resilient labor market and economic momentum (currency-positive); a weak or negative print raises recession concern.' },
   ] },
   { title: 'Activity', metrics: [
-    { key: 'retail_sales_yoy', label: 'Retail sales YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'retail_sales_yoy', label: 'Retail sales YoY', suffix: '%', step: '0.01', applies: ['USD'],
+      note: 'Consumer spending makes up the bulk of most economies\' GDP -- rising retail sales signal healthy demand and economic momentum.' },
   ] },
   { title: 'Trade', metrics: [
-    { key: 'trade_balance', label: 'Trade balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD'] },
+    { key: 'trade_balance', label: 'Trade balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD'],
+      note: 'A surplus (more exports than imports) means net foreign demand for the currency to pay for those exports -- currency-supportive; a persistent deficit works the other way.' },
   ] },
   { title: 'Current account', metrics: [
-    { key: 'current_account', label: 'Balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD'] },
+    { key: 'current_account', label: 'Balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD'],
+      note: 'The broadest measure of transactions with the rest of the world (trade plus investment income) -- a surplus reflects net foreign demand for the currency; a persistent deficit typically needs financing by capital inflows, which can pressure it lower over time.' },
   ] },
   { title: 'GDP', metrics: [
-    { key: 'gdp_yoy', label: 'GDP YoY', suffix: '%', step: '0.01' },
+    { key: 'gdp_yoy', label: 'GDP YoY', suffix: '%', step: '0.01',
+      note: 'Faster GDP growth signals a healthier economy and more attractive returns for foreign investors -- generally currency-positive.' },
   ] },
   { title: 'PMI', metrics: [
-    { key: 'pmi', label: 'PMI', suffix: '', step: '0.1' },
+    { key: 'pmi', label: 'PMI', suffix: '', step: '0.1',
+      note: 'A PMI above 50 signals expansion in manufacturing activity, below 50 signals contraction. Rising PMI usually supports the currency as it points to accelerating economic activity.' },
   ] },
   // Last on purpose, and laid out as a wide 2-column card (see .wide in
   // dashboard-core.css) -- it has up to 6 rows depending on the currency,
   // more than any other card, so stacked in one narrow column it towered
   // over its neighbors and stretched their whole grid row to match.
   { title: 'Inflation', wide: true, metrics: [
-    { key: 'cpi_yoy', label: 'CPI YoY', suffix: '%', step: '0.01' },
-    { key: 'cpi_mom', label: 'CPI MoM', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
-    { key: 'core_cpi_yoy', label: 'Core CPI YoY', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
-    { key: 'core_ppi_yoy', label: 'Core PPI YoY', suffix: '%', step: '0.01', applies: ['USD'] },
-    { key: 'core_pce_yoy', label: 'Core PCE YoY', suffix: '%', step: '0.01', applies: ['USD'] },
-    { key: 'core_pce_mom', label: 'Core PCE MoM', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'cpi_yoy', label: 'CPI YoY', suffix: '%', step: '0.01',
+      note: 'Rising inflation above target often pushes the central bank toward tightening (rate hikes), which can be currency-supportive in the near term -- but persistently high inflation erodes purchasing power and can weaken the currency over the long run.' },
+    { key: 'cpi_mom', label: 'CPI MoM', suffix: '%', step: '0.01', applies: ['USD', 'EUR'],
+      note: 'Month-over-month inflation -- a noisier, more immediate read than the annual figure; a hot print raises the odds of near-term rate-hike pressure.' },
+    { key: 'core_cpi_yoy', label: 'Core CPI YoY', suffix: '%', step: '0.01', applies: ['USD', 'EUR'],
+      note: 'Strips out volatile food and energy prices -- the central bank\'s preferred inflation gauge for policy decisions, since it reflects underlying price pressure rather than one-off swings.' },
+    { key: 'core_ppi_yoy', label: 'Core PPI YoY', suffix: '%', step: '0.01', applies: ['USD'],
+      note: 'Pipeline inflation at the producer level -- rising producer costs often get passed through to consumer prices later, making this a leading indicator for future CPI.' },
+    { key: 'core_pce_yoy', label: 'Core PCE YoY', suffix: '%', step: '0.01', applies: ['USD'],
+      note: 'The Fed\'s own preferred inflation gauge, distinct from CPI -- weighted differently and adjusted for consumers substituting cheaper goods, which the Fed considers a more accurate read on underlying inflation.' },
+    { key: 'core_pce_mom', label: 'Core PCE MoM', suffix: '%', step: '0.01', applies: ['USD'],
+      note: 'Month-over-month core PCE -- the same Fed-preferred gauge as Core PCE YoY, just the more immediate monthly read.' },
   ] },
 ];
 const METRIC_META = METRIC_GROUPS.flatMap(g => g.metrics);
@@ -144,7 +162,7 @@ function metricRowHtml(row, meta) {
   const prev = row['prev_' + meta.key];
   const arrow = (v == null || prev == null || v === prev) ? '' : (v > prev ? '▲' : '▼');
   const prevText = prev == null ? 'no prior value' : `prev ${meta.prefix || ''}${prev}${meta.suffix}`;
-  return `<div class="metric-row">
+  return `<div class="metric-row"${meta.note ? ` title="${meta.note}"` : ''}>
       <div class="metric-row-head">
         <span class="metric-card-label">${meta.label}</span>
         ${arrow ? `<span class="metric-arrow">${arrow}</span>` : ''}
@@ -383,15 +401,19 @@ function renderFundamentals(host, data) {
     host.innerHTML = `<div class="empty">No macro data yet for ${data.base || '?'}/${data.quote || '?'} — fill in the Macro snapshot below first.</div>`;
     return;
   }
-  const rows = [...data.scored_rows, data.cpi_row];
-  const trs = rows.map(r => `
+  // Only metrics both currencies actually have a distinct value for reach
+  // this table at all (see fundamentals.py) -- every row here is a real,
+  // resolved comparison, never an unscored "context only" placeholder.
+  const rows = data.scored_rows;
+  const trs = rows.length ? rows.map(r => `
     <tr>
       <td class="strong">${r.label}</td>
-      <td class="num">${r.base_value != null ? r.base_value : '—'}</td>
-      <td class="num">${r.quote_value != null ? r.quote_value : '—'}</td>
-      <td>${r.edge ? `<span class="badge WIN">${r.edge === 'base' ? data.base : data.quote}</span>` : '<span style="color:var(--text-muted); font-size:11px;">context only</span>'}</td>
+      <td class="num">${r.base_value}</td>
+      <td class="num">${r.quote_value}</td>
+      <td><span class="badge WIN">${r.edge === 'base' ? data.base : data.quote}</span></td>
     </tr>
-    <tr><td colspan="4" style="color:var(--text-muted); font-size:11px; padding-top:0; border-bottom:1px solid var(--border);">${r.note}</td></tr>`).join('');
+    <tr><td colspan="4" style="color:var(--text-muted); font-size:11px; padding-top:0; border-bottom:1px solid var(--border);">${r.note}</td></tr>`).join('')
+    : `<tr><td colspan="4" class="empty">No metrics both currencies have in common yet -- fill in interest rate, GDP, unemployment, or PMI for both.</td></tr>`;
   host.innerHTML = `
     <div class="bw-card ${data.score.base === data.score.quote ? '' : 'bw-good'}" style="margin-bottom:16px;">
       <div class="bw-label">Conclusion — ${data.base}/${data.quote}</div>
