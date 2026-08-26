@@ -314,8 +314,21 @@ AVATAR_MAX_DIMENSION = (3840, 2160)
 AVATAR_STORE_DIMENSION = (512, 512)
 
 
-def _render_profile(**messages):
+def _current_user_or_none():
+    # session["user_id"] can outlive the account it points at (e.g. an
+    # admin deletes the row while the browser still has a valid signed
+    # session cookie) -- callers must handle None rather than assume the
+    # row still exists.
     user = db.get_user_by_id(session["user_id"])
+    if not user:
+        session.clear()
+    return user
+
+
+def _render_profile(**messages):
+    user = _current_user_or_none()
+    if not user:
+        return redirect(url_for("login"))
     return render_template(
         "profile.html", active_page="profile", user=db.public_user_dict(user),
         country_options=countries.options_html(user["country"] or ""),
@@ -396,7 +409,9 @@ def avatar(user_id):
 
 @app.route("/profile/change-password", methods=["GET", "POST"])
 def profile_change_password():
-    user = db.get_user_by_id(session["user_id"])
+    user = _current_user_or_none()
+    if not user:
+        return redirect(url_for("login"))
     error = ""
     success = ""
     if request.method == "POST":

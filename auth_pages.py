@@ -23,7 +23,7 @@ _STYLE = """
   .auth-art-inner h2{font-size:26px;margin:0 0 8px;letter-spacing:0.5px;}
   .auth-art-inner p{font-size:13.5px;color:#9a9a97;margin:0;}
   .auth-form-col{flex:1;display:flex;align-items:center;justify-content:flex-end;padding:24px 64px;box-sizing:border-box;}
-  .card{background:#1a1a19;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:32px 28px;width:300px;}
+  .card{background:#1a1a19;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:32px 28px;width:300px;max-width:100%;box-sizing:border-box;}
   h1{font-size:16px;margin:0 0 6px;}
   .sub{font-size:12.5px;color:#9a9a97;margin:0 0 16px;}
   input,select{width:100%;background:#212120;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;
@@ -37,7 +37,7 @@ _STYLE = """
   .links a{color:#8f9cf5;text-decoration:none;}
   .links a:hover{text-decoration:underline;}
   form + form{margin-top:10px;}
-  @media (max-width:760px){.auth-art{display:none;} .auth-form-col{justify-content:center;padding:24px;}}
+  @media (max-width:760px){.auth-art{display:none;} .auth-form-col{justify-content:center;padding:16px;}}
 """
 
 

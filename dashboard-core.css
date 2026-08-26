@@ -154,7 +154,7 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; color: var(--text-primary);
   font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 7px 10px; cursor: pointer;
 }
-.date-range-custom { display: inline-flex; gap: 6px; margin-left: 8px; align-items: center; }
+.date-range-custom { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; align-items: center; }
 .date-range-custom input[type="date"] {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; color: var(--text-primary);
   font-family: var(--font-mono); font-size: 12px; padding: 6px 8px;
@@ -423,7 +423,9 @@ footer { text-align: center; color: var(--text-muted); font-size: 11px; margin-t
 .modal h2 { font-size: 15px; margin: 0 0 14px; font-weight: 650; }
 .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
 .form-grid.thirds { grid-template-columns: repeat(3, 1fr); }
+.form-grid.halves { grid-template-columns: repeat(2, 1fr); }
 @media (max-width: 640px) { .form-grid, .form-grid.thirds { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .form-grid, .form-grid.thirds, .form-grid.halves { grid-template-columns: 1fr; } }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
 .field input, .field select, .field textarea {
