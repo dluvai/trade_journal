@@ -37,6 +37,7 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, request, send_from_directory, session, url_for
 
 import ai_bias
+import backup
 import db
 import debt_model
 import fred_calendar
@@ -61,6 +62,11 @@ def _load_dotenv():
 
 
 _load_dotenv()
+
+# Module level, not inside `if __name__ == "__main__"` -- gunicorn imports
+# this file directly on Render and never runs that block, so a backup
+# trigger placed there would only ever fire during local dev.
+backup.backup_if_needed()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
@@ -254,6 +260,17 @@ def api_currency_news(currency):
 def api_news_summary():
     url = request.args.get("url", "")
     return jsonify({"summary": market_data.get_article_summary(url)})
+
+
+@app.get("/api/backups")
+def api_list_backups():
+    return jsonify(backup.list_backups())
+
+
+@app.post("/api/backups")
+def api_backup_now():
+    path = backup.backup_now()
+    return jsonify({"ok": path is not None, "filename": path.name if path else None})
 
 
 @app.get("/api/debt-snapshot")
