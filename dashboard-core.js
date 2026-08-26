@@ -67,6 +67,48 @@ const DC = (function () {
     return trades.map(t => { cum += t.pnl; return { date: t.date, pair: t.pair, cum, pnl: t.pnl, result: t.result }; });
   }
 
+  // Takes computeEquity's output, not raw trades -- drawdown is a property
+  // of the cumulative curve, so there's no reason to re-derive the running
+  // total here too. Tracks a running peak ("high-water mark") and the
+  // biggest peak-to-trough gap seen anywhere in the sequence; then looks
+  // for the first later point that claws back up to that same peak to
+  // measure how long the recovery took. Index-based internally (not
+  // date-based) because multiple trades can share a date -- searching by
+  // date would risk matching the wrong same-day trade.
+  function computeDrawdown(equityPoints) {
+    if (!equityPoints.length) {
+      return { maxDrawdown: 0, peakDate: null, troughDate: null, recoveryDate: null, daysToRecover: null, recovered: true };
+    }
+    let peakValue = 0, peakIdx = 0;
+    let maxDD = 0, ddPeakIdx = 0, ddTroughIdx = 0;
+
+    equityPoints.forEach((p, i) => {
+      if (p.cum > peakValue) { peakValue = p.cum; peakIdx = i; }
+      const dd = peakValue - p.cum;
+      if (dd > maxDD) { maxDD = dd; ddPeakIdx = peakIdx; ddTroughIdx = i; }
+    });
+
+    const peakValueAtDD = equityPoints[ddPeakIdx].cum;
+    let recoveryIdx = -1;
+    for (let i = ddTroughIdx + 1; i < equityPoints.length; i++) {
+      if (equityPoints[i].cum >= peakValueAtDD) { recoveryIdx = i; break; }
+    }
+
+    const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+
+    return {
+      maxDrawdown: maxDD,
+      peakDate: equityPoints[ddPeakIdx].date,
+      troughDate: equityPoints[ddTroughIdx].date,
+      recoveryDate: recoveryIdx >= 0 ? equityPoints[recoveryIdx].date : null,
+      daysToRecover: recoveryIdx >= 0 ? daysBetween(equityPoints[ddTroughIdx].date, equityPoints[recoveryIdx].date) : null,
+      recovered: recoveryIdx >= 0,
+      // raw positions too, so a caller that already has the same points
+      // array (the equity chart) can draw the band without re-searching
+      peakIdx: ddPeakIdx, troughIdx: ddTroughIdx, recoveryIdx,
+    };
+  }
+
   function computeGroupStats(trades, key, order) {
     const map = new Map();
     trades.forEach(t => {
@@ -119,7 +161,7 @@ const DC = (function () {
 
   // ---------- rendering: tiles / equity / donut ----------
 
-  function renderTiles(hostId, stats) {
+  function renderTiles(hostId, stats, drawdown) {
     const pf = isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞';
     const tiles = [
       { label: 'Total trades', value: stats.total },
@@ -132,12 +174,20 @@ const DC = (function () {
       { label: 'Best streak', value: stats.bestStreak + 'W', cls: 'good' },
       { label: 'Plan violations', value: stats.violations, cls: stats.violations > 0 ? 'critical' : '' },
     ];
+    if (drawdown && drawdown.maxDrawdown > 0) {
+      tiles.push({ label: 'Max drawdown', value: '-' + (drawdown.maxDrawdown * 100).toFixed(1) + '%', cls: 'critical' });
+      tiles.push({
+        label: 'Recovery',
+        value: drawdown.recovered ? `${drawdown.daysToRecover}d` : 'Ongoing',
+        cls: drawdown.recovered ? 'good' : 'critical',
+      });
+    }
     document.getElementById(hostId).innerHTML = tiles.map(t => `
       <div class="tile"><div class="label">${t.label}</div><div class="value ${t.cls || ''}">${t.value}</div></div>
     `).join('');
   }
 
-  function renderEquity(hostId, points) {
+  function renderEquity(hostId, points, drawdown) {
     const host = document.getElementById(hostId);
     if (!points.length) { host.innerHTML = '<div class="empty">No trades in this range.</div>'; return; }
     const W = 1000, H = 280, PAD_L = 46, PAD_R = 10, PAD_T = 14, PAD_B = 26;
@@ -167,9 +217,25 @@ const DC = (function () {
       xLabelsSvg += `<text class="axis-label" x="${x(idx).toFixed(2)}" y="${H - 6}" text-anchor="middle">${points[idx].date.slice(5)}</text>`;
     }
 
+    // Shade the worst peak-to-trough stretch directly on the curve -- a
+    // number in a tile tells you "how deep"; seeing exactly where and how
+    // long tells you a lot more about what happened in the account.
+    let drawdownSvg = '';
+    if (drawdown && drawdown.maxDrawdown > 0) {
+      const ddEndIdx = drawdown.recoveryIdx >= 0 ? drawdown.recoveryIdx : points.length - 1;
+      const bandX1 = x(drawdown.peakIdx), bandX2 = x(ddEndIdx);
+      const troughX = x(drawdown.troughIdx), troughY = y(points[drawdown.troughIdx].cum);
+      drawdownSvg = `
+        <rect x="${bandX1.toFixed(2)}" y="${PAD_T}" width="${(bandX2 - bandX1).toFixed(2)}" height="${innerH}" fill="${CRIT}" opacity="0.07"/>
+        <circle cx="${troughX.toFixed(2)}" cy="${troughY.toFixed(2)}" r="4" fill="${CRIT}"/>
+        <circle cx="${troughX.toFixed(2)}" cy="${troughY.toFixed(2)}" r="8" fill="none" stroke="${CRIT}" stroke-width="1.5" opacity="0.5"/>
+      `;
+    }
+
     host.innerHTML = `
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="${hostId}Svg">
         ${gridSvg}
+        ${drawdownSvg}
         <line class="baseline" x1="${PAD_L}" x2="${W - PAD_R}" y1="${zeroY.toFixed(2)}" y2="${zeroY.toFixed(2)}"/>
         <path d="${areaPath}" fill="${SERIES}" opacity="0.10" stroke="none"/>
         <path d="${path}" fill="none" stroke="${SERIES}" stroke-width="2"/>
@@ -665,10 +731,12 @@ const DC = (function () {
     const trades = currentYear === 'all' ? allTrades : allTrades.filter(t => t.year === currentYear);
     const stats = computeStats(trades);
     const bw = computeBestWorst(trades);
+    const equity = computeEquity(trades);
+    const drawdown = computeDrawdown(equity);
 
     renderYearFilter('yearFilter', allTrades, currentYear, opts.onYearChange);
-    renderTiles('tiles', stats);
-    renderEquity('equityChart', computeEquity(trades));
+    renderTiles('tiles', stats, drawdown);
+    renderEquity('equityChart', equity, drawdown);
     renderDonut('donutChart', stats);
     renderWinRateBars('dayChart', computeGroupStats(trades, 'day', DAY_ORDER));
     renderWinRateBars('sessionChart', computeGroupStats(trades, 'session'));
