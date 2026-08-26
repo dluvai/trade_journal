@@ -791,18 +791,24 @@ function renderNewsItems(host, items) {
   });
 }
 
-// A summary here is genuinely just the headline -- Yahoo's search API (our
-// news source) doesn't return article body text or a snippet, only
-// title/publisher/time/link. Rather than fabricate summary text that was
-// never actually in the source, the popup shows the headline large and
-// sends you to the real article for the rest.
-function openNewsModal(item) {
+// The summary is the article's own og:description meta tag -- the same
+// blurb the publisher writes for link previews everywhere (iMessage, Slack,
+// Twitter all read this exact tag). Fetched lazily, only when a card is
+// actually opened, not for every headline in the list.
+async function openNewsModal(item) {
   if (!item) return;
   document.getElementById('newsModalMeta').textContent = `${item.publisher}${item.time ? ' · ' + timeAgo(item.time) : ''}`;
   document.getElementById('newsModalTitle').textContent = item.title;
-  document.getElementById('newsModalSummary').textContent = '';
   document.getElementById('newsModalLink').href = item.link;
   document.getElementById('newsModalBackdrop').classList.remove('hidden');
+  const summaryEl = document.getElementById('newsModalSummary');
+  summaryEl.textContent = 'Loading summary…';
+  try {
+    const { summary } = await (await fetch(`/api/news-summary?url=${encodeURIComponent(item.link)}`)).json();
+    summaryEl.textContent = summary || "No summary available from the source.";
+  } catch (e) {
+    summaryEl.textContent = '';
+  }
 }
 
 const newsModalBackdrop = document.getElementById('newsModalBackdrop');

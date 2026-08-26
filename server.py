@@ -250,6 +250,12 @@ def api_currency_news(currency):
     return jsonify(market_data.get_currency_news(currency))
 
 
+@app.get("/api/news-summary")
+def api_news_summary():
+    url = request.args.get("url", "")
+    return jsonify({"summary": market_data.get_article_summary(url)})
+
+
 @app.get("/api/debt-snapshot")
 def api_debt_snapshot():
     return jsonify(debt_model.snapshot())

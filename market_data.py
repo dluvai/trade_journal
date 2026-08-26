@@ -14,7 +14,9 @@ funding basis, not the futures curve, so this is the closer of the two.
 Both fetchers cache their result in memory for a short window so a
 dashboard left open polling every 20-30s doesn't hammer Yahoo on every tab.
 """
+import html
 import json
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -118,6 +120,41 @@ _MAJORS_FEED = ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X"]
 def get_currency_news(currency):
     queries = CURRENCY_NEWS_QUERIES.get(currency, _MAJORS_FEED)
     return _cached(f"news_{currency}", 300, lambda: _fetch_news_for_queries(queries))
+
+
+_DESCRIPTION_PATTERNS = [
+    re.compile(r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']*)["\']', re.IGNORECASE),
+    re.compile(r'<meta\s+content=["\']([^"\']*)["\']\s+property=["\']og:description["\']', re.IGNORECASE),
+    re.compile(r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']*)["\']', re.IGNORECASE),
+    re.compile(r'<meta\s+content=["\']([^"\']*)["\']\s+name=["\']description["\']', re.IGNORECASE),
+]
+
+
+def _fetch_article_summary(url):
+    # The og:description / meta-description tag is a short blurb the
+    # publisher writes specifically to be shown when the page is linked
+    # elsewhere (link previews on iMessage, Slack, Twitter, etc. all read
+    # the same tag) -- a legitimate, publisher-provided summary, not us
+    # scraping the article body/paragraphs, which would raise real
+    # copyright and ToS concerns across dozens of different publishers.
+    if not url.startswith("https://"):
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read(200_000)  # the <head> is always well within this; no need for the full page
+        text = raw.decode("utf-8", errors="ignore")
+        for pattern in _DESCRIPTION_PATTERNS:
+            m = pattern.search(text)
+            if m and m.group(1).strip():
+                return html.unescape(m.group(1).strip())
+        return None
+    except Exception:
+        return None
+
+
+def get_article_summary(url):
+    return _cached(f"summary::{url}", 3600, lambda: _fetch_article_summary(url))
 
 
 if __name__ == "__main__":
