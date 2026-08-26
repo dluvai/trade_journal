@@ -1,0 +1,23 @@
+name: Keep Render service awake
+
+# Render's free tier spins the service down after ~15 minutes with no
+# incoming requests, which would also stop auto_sync.py's background
+# thread. A request every 10 minutes is well inside that window -- any
+# response (even the 302 to /login when DASHBOARD_PASSWORD is set) counts
+# as activity and keeps it warm, so this doesn't need to authenticate.
+#
+# GitHub only guarantees "at or after" the scheduled time for cron
+# workflows, not exact timing -- under load it can run a few minutes late.
+# 10 minutes leaves enough margin under Render's 15-minute threshold to
+# absorb that without the service actually spinning down.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the dashboard
+        run: curl -sf --max-time 20 -o /dev/null -w "HTTP %{http_code}\n" https://felixtrades.onrender.com/ || true
