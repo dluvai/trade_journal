@@ -205,8 +205,8 @@ function render() {
     onYearChange: (y) => { currentYear = y; render(); },
     onEdit: openEdit,
     onDelete: onDelete,
-    subheadText: (n) => `${n} trades total · live from trades.db`,
-    footerText: 'Local server — nothing leaves this machine · http://localhost:5151',
+    subheadText: (n) => `${n} trades total`,
+    footerText: 'Felix Trade Journal',
   });
 }
 
