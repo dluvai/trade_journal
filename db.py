@@ -100,12 +100,16 @@ def get_conn():
     return conn
 
 
-def derive_result(pnl):
-    if pnl > 0:
-        return "WIN"
-    if pnl < 0:
+def derive_result(rr):
+    # Based on realized R-multiple, not raw PnL -- a trade that closed
+    # slightly positive but well under your planned 1R isn't a real "win"
+    # in an R-multiple system, it's a breakeven-ish outcome. Always
+    # computed, never manually overridden (see insert_trade/update_trade).
+    if rr < 0:
         return "LOSS"
-    return "BE"
+    if rr <= 1:
+        return "BE"
+    return "WIN"
 
 
 def row_to_dict(row):
@@ -157,7 +161,7 @@ def _strategy_id_or_none(fields):
 def insert_trade(fields):
     now = datetime.now().isoformat(timespec="seconds")
     pnl = float(fields.get("pnl") or 0)
-    result = fields.get("result") or derive_result(pnl)
+    result = derive_result(float(fields.get("rr") or 0))
     conn = get_conn()
     cur = conn.execute(
         """INSERT INTO trades (date, session, pair, direction, risk, rr, pnl, result, notes,
@@ -180,7 +184,7 @@ def insert_trade(fields):
 def update_trade(trade_id, fields):
     now = datetime.now().isoformat(timespec="seconds")
     pnl = float(fields.get("pnl") or 0)
-    result = fields.get("result") or derive_result(pnl)
+    result = derive_result(float(fields.get("rr") or 0))
     conn = get_conn()
     conn.execute(
         """UPDATE trades SET date=?, session=?, pair=?, direction=?, risk=?, rr=?, pnl=?, result=?,
