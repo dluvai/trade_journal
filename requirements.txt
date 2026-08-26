@@ -3,3 +3,4 @@ openpyxl==3.1.5
 anthropic==1.0.0
 gunicorn==23.0.0
 tzdata==2025.2
+libsql-client==0.3.1

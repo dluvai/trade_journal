@@ -1,54 +1,55 @@
-"""Shared SQLite access for the live trade-entry dashboard."""
+"""Shared Turso (libSQL) access for the live trade-entry dashboard."""
 import os
-import sqlite3
-from datetime import date, datetime
-from pathlib import Path
+from datetime import datetime
 
-# Overridable so a hosted deployment can point this at a persistent disk
-# (e.g. Render's mounted volume) instead of the app's own ephemeral folder.
-DB_PATH = Path(os.environ.get("DB_PATH", str(Path(__file__).parent / "trades.db")))
+import libsql_client
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS trades (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,
-    session TEXT,
-    pair TEXT,
-    direction TEXT,
-    risk REAL,
-    rr REAL NOT NULL DEFAULT 0,
-    pnl REAL NOT NULL DEFAULT 0,
-    result TEXT NOT NULL,
-    notes TEXT,
-    chart_daily TEXT,
-    chart_4h TEXT,
-    chart_30m TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
-
-CREATE TABLE IF NOT EXISTS macro (
-    currency TEXT PRIMARY KEY,
-    bias TEXT,
-    notes TEXT,
-    updated_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS strategies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-"""
+# One CREATE TABLE per statement -- libsql_client has no executescript(),
+# unlike stdlib sqlite3.
+SCHEMA_STATEMENTS = [
+    """CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        session TEXT,
+        pair TEXT,
+        direction TEXT,
+        risk REAL,
+        rr REAL NOT NULL DEFAULT 0,
+        pnl REAL NOT NULL DEFAULT 0,
+        result TEXT NOT NULL,
+        notes TEXT,
+        chart_daily TEXT,
+        chart_4h TEXT,
+        chart_30m TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS macro (
+        currency TEXT PRIMARY KEY,
+        bias TEXT,
+        notes TEXT,
+        updated_at TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS strategies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
+]
 
 MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
 
@@ -62,42 +63,103 @@ MACRO_METRIC_KEYS = [
 ]
 
 
+def _to_https(url):
+    # The libsql:// scheme talks Hrana-over-websocket, which fails its
+    # protocol handshake with this client version -- the https:// scheme is
+    # the one confirmed working for every operation this app needs.
+    if url.startswith("libsql://"):
+        return "https://" + url[len("libsql://"):]
+    return url
+
+
 def _migrate_macro_prev_columns(conn):
     # Metric columns were added to this table over time, after real databases
     # already existed -- CREATE TABLE IF NOT EXISTS won't add columns to a
     # table that's already there, so backfill any missing ones by hand.
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(macro)")}
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(macro)").rows}
     needed = list(MACRO_METRIC_KEYS) + [f"prev_{k}" for k in MACRO_METRIC_KEYS]
     for col in needed:
         if col not in existing:
             conn.execute(f"ALTER TABLE macro ADD COLUMN {col} REAL")
-    conn.commit()
 
 
 def _migrate_trades_strategy_column(conn):
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)")}
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)").rows}
     if "strategy_id" not in existing:
-        # Nullable and no FOREIGN KEY constraint on purpose: SQLite only
+        # Nullable and no FOREIGN KEY constraint on purpose: SQLite/libsql only
         # enforces foreign keys when PRAGMA foreign_keys=ON is set per
         # connection (easy to forget elsewhere in the codebase and get
         # silently-unenforced constraints), and a trade logged before this
         # column existed -- or one that's just discretionary, no formal
         # setup -- has no strategy to point at. NULL means exactly that.
         conn.execute("ALTER TABLE trades ADD COLUMN strategy_id INTEGER")
-    conn.commit()
+
+
+def _migrate_user_id_columns(conn):
+    # Same rationale/pattern as strategy_id above: nullable, no FK, backfilled
+    # by hand since these columns were added after real data already existed.
+    for table in ("trades", "strategies"):
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").rows}
+        if "user_id" not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER")
+
+
+_schema_ready = False
+_client = None
+
+
+def _ensure_schema(conn):
+    # Each statement here is a separate network round-trip to Turso (~300ms),
+    # unlike the equivalent local-sqlite PRAGMA/ALTER calls this was ported
+    # from, which cost microseconds -- running all of this on every single
+    # get_conn() call (matching the old sqlite3 pattern) added several
+    # seconds of latency to every API request. Run it once per process
+    # instead; a stale flag after a schema change just means restarting the
+    # process, same as any other in-memory cache in this app.
+    global _schema_ready
+    if _schema_ready:
+        return
+    for stmt in SCHEMA_STATEMENTS:
+        conn.execute(stmt)
+    _migrate_macro_prev_columns(conn)
+    _migrate_trades_strategy_column(conn)
+    _migrate_user_id_columns(conn)
+    _schema_ready = True
 
 
 def get_conn():
-    # If DB_PATH points at a directory that doesn't exist yet (e.g. a Render
-    # disk mount path set before the disk was actually attached), create it
-    # rather than letting sqlite3 fail to open the file entirely.
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    _migrate_macro_prev_columns(conn)
-    _migrate_trades_strategy_column(conn)
-    return conn
+    # One client reused for the life of the process rather than a fresh one
+    # per call: each call also pays a ~1s "cold" first-request cost on top of
+    # the usual ~300ms per query, and this app's gunicorn setup (Procfile) is
+    # a single sync worker handling one request at a time, so there's no
+    # concurrent-access risk to reusing it.
+    global _client
+    if _client is None:
+        # Read lazily, not as a module-level constant -- server.py imports
+        # this module before it calls its own _load_dotenv(), so capturing
+        # these at import time would always see them unset locally.
+        url = os.environ.get("TURSO_DATABASE_URL")
+        token = os.environ.get("TURSO_AUTH_TOKEN")
+        if not url or not token:
+            raise RuntimeError(
+                "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set -- this app "
+                "stores everything in Turso now, there is no local file fallback."
+            )
+        _client = libsql_client.create_client_sync(url=_to_https(url), auth_token=token)
+    _ensure_schema(_client)
+    return _client
+
+
+def close():
+    # libsql_client's background executor thread is not a daemon thread, so
+    # skipping this leaves any short-lived script (create_user.py, a one-off
+    # migration) hanging indefinitely after it's actually done -- Python
+    # won't exit while a non-daemon thread is still alive. Not needed by the
+    # live server itself, which runs until the process is killed anyway.
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None
 
 
 def derive_result(rr):
@@ -113,7 +175,7 @@ def derive_result(rr):
 
 
 def row_to_dict(row):
-    d = dict(row)
+    d = row.asdict()
     try:
         dt = datetime.strptime(d["date"], "%Y-%m-%d").date()
         d["day"] = DAY_NAMES[dt.weekday()]
@@ -142,14 +204,14 @@ def snapshot_image_url(tv_link):
     return f"https://s3.tradingview.com/snapshots/{sid[0].lower()}/{sid}.png"
 
 
-def list_trades():
+def list_trades(user_id):
     conn = get_conn()
     rows = conn.execute("""
         SELECT trades.*, strategies.name AS strategy_name
         FROM trades LEFT JOIN strategies ON strategies.id = trades.strategy_id
+        WHERE trades.user_id = ?
         ORDER BY trades.date ASC, trades.id ASC
-    """).fetchall()
-    conn.close()
+    """, (user_id,)).rows
     return [row_to_dict(r) for r in rows]
 
 
@@ -158,63 +220,57 @@ def _strategy_id_or_none(fields):
     return int(raw) if raw not in (None, "") else None
 
 
-def insert_trade(fields):
+def insert_trade(user_id, fields):
     now = datetime.now().isoformat(timespec="seconds")
     pnl = float(fields.get("pnl") or 0)
     result = derive_result(float(fields.get("rr") or 0))
     conn = get_conn()
-    cur = conn.execute(
+    rs = conn.execute(
         """INSERT INTO trades (date, session, pair, direction, risk, rr, pnl, result, notes,
-                                chart_daily, chart_4h, chart_30m, strategy_id, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                chart_daily, chart_4h, chart_30m, strategy_id, user_id, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), now, now,
+            _strategy_id_or_none(fields), user_id, now, now,
         ),
     )
-    conn.commit()
-    new_id = cur.lastrowid
-    conn.close()
+    new_id = rs.last_insert_rowid
     return new_id
 
 
-def update_trade(trade_id, fields):
+def update_trade(user_id, trade_id, fields):
     now = datetime.now().isoformat(timespec="seconds")
     pnl = float(fields.get("pnl") or 0)
     result = derive_result(float(fields.get("rr") or 0))
     conn = get_conn()
     conn.execute(
         """UPDATE trades SET date=?, session=?, pair=?, direction=?, risk=?, rr=?, pnl=?, result=?,
-               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, strategy_id=?, updated_at=? WHERE id=?""",
+               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, strategy_id=?, updated_at=?
+           WHERE id=? AND user_id=?""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), now, trade_id,
+            _strategy_id_or_none(fields), now, trade_id, user_id,
         ),
     )
-    conn.commit()
-    conn.close()
 
 
-def delete_trade(trade_id):
+def delete_trade(user_id, trade_id):
     conn = get_conn()
-    conn.execute("DELETE FROM trades WHERE id=?", (trade_id,))
-    conn.commit()
-    conn.close()
+    conn.execute("DELETE FROM trades WHERE id=? AND user_id=?", (trade_id, user_id))
 
 
-# ---------- generic settings (key/value) ----------
+# ---------- generic settings (key/value, global) ----------
 
 def get_setting(key, default=None):
     conn = get_conn()
-    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    conn.close()
-    return row["value"] if row else default
+    rows = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).rows
+    return rows[0]["value"] if rows else default
 
 
 def set_setting(key, value):
@@ -223,45 +279,37 @@ def set_setting(key, value):
         "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (key, value),
     )
-    conn.commit()
-    conn.close()
 
 
-# ---------- strategies (list) ----------
+# ---------- strategies (per-user) ----------
 
-def list_strategies():
+def list_strategies(user_id):
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM strategies ORDER BY created_at ASC").fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    rows = conn.execute("SELECT * FROM strategies WHERE user_id=? ORDER BY created_at ASC", (user_id,)).rows
+    return [r.asdict() for r in rows]
 
 
-def create_strategy(name, description):
+def create_strategy(user_id, name, description):
     now = datetime.now().isoformat(timespec="seconds")
     conn = get_conn()
-    cur = conn.execute(
-        "INSERT INTO strategies (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        (name, description, now, now),
+    rs = conn.execute(
+        "INSERT INTO strategies (name, description, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (name, description, user_id, now, now),
     )
-    conn.commit()
-    new_id = cur.lastrowid
-    conn.close()
+    new_id = rs.last_insert_rowid
     return new_id
 
 
-def delete_strategy(strategy_id):
+def delete_strategy(user_id, strategy_id):
     conn = get_conn()
-    conn.execute("DELETE FROM strategies WHERE id=?", (strategy_id,))
-    conn.commit()
-    conn.close()
+    conn.execute("DELETE FROM strategies WHERE id=? AND user_id=?", (strategy_id, user_id))
 
 
-# ---------- macro snapshot ----------
+# ---------- macro snapshot (global, shared by every user) ----------
 
 def list_macro():
     conn = get_conn()
-    rows = {r["currency"]: dict(r) for r in conn.execute("SELECT * FROM macro")}
-    conn.close()
+    rows = {r["currency"]: r.asdict() for r in conn.execute("SELECT * FROM macro").rows}
     result = []
     for c in MAJOR_CURRENCIES:
         blank = {"currency": c, "bias": None, "notes": None, "updated_at": None}
@@ -275,8 +323,8 @@ def list_macro():
 def upsert_macro(currency, fields):
     now = datetime.now().isoformat(timespec="seconds")
     conn = get_conn()
-    existing_row = conn.execute("SELECT * FROM macro WHERE currency=?", (currency,)).fetchone()
-    existing = dict(existing_row) if existing_row else {}
+    existing_rows = conn.execute("SELECT * FROM macro WHERE currency=?", (currency,)).rows
+    existing = existing_rows[0].asdict() if existing_rows else {}
 
     # Keep one step of history per metric -- whatever the value *was* moves
     # into prev_* only when the incoming value actually changes it, so the UI
@@ -305,5 +353,28 @@ def upsert_macro(currency, fields):
         f"ON CONFLICT(currency) DO UPDATE SET {update_clause}",
         values,
     )
-    conn.commit()
-    conn.close()
+
+
+# ---------- users ----------
+
+def get_user_by_username(username):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM users WHERE username=?", (username,)).rows
+    return rows[0].asdict() if rows else None
+
+
+def create_user(username, password_hash):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    rs = conn.execute(
+        "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+        (username, password_hash, now),
+    )
+    new_id = rs.last_insert_rowid
+    return new_id
+
+
+def count_users():
+    conn = get_conn()
+    n = conn.execute("SELECT COUNT(*) AS n FROM users").rows[0]["n"]
+    return n

@@ -1,26 +1,26 @@
 """
-Local live dashboard: log, edit, and delete trades from the browser instead
-of the Excel journal. Everything is stored in trades.db (SQLite) next to
-this script.
+Live dashboard: log, edit, and delete trades from the browser instead of
+the Excel journal. Everything is stored in a shared Turso (libSQL) database
+-- see TURSO_DATABASE_URL/TURSO_AUTH_TOKEN below -- not a local file, so
+local dev and any deployment see the same data.
 
 First time setup:
-    python migrate_from_xlsx.py     (imports your existing journal once)
-    python server.py                (starts the server)
+    python create_user.py <username>   (creates your login)
+    python server.py                   (starts the server)
 
 Then open http://127.0.0.1:5151 in a browser.
 
-Password protection (only matters if you deploy this somewhere reachable
-off your own machine -- running locally with no DASHBOARD_PASSWORD set
-skips the login screen entirely, exactly like before):
-    Set the DASHBOARD_PASSWORD environment variable before starting the
-    server, and a login screen gates every page and API route. Also set
-    SECRET_KEY (any random string) so login sessions survive a restart --
-    without it, everyone gets logged out each time the server restarts.
+Login: each person gets their own username/password (see create_user.py).
+A brand-new database with zero users skips the login screen entirely; the
+moment one account exists, every page and API route requires a login.
+Set SECRET_KEY (any random string) so sessions survive a restart -- without
+it, everyone gets logged out each time the server restarts.
 
 Local secrets, without retyping them every session:
     Create a file named .env next to this script (already gitignored -- it
     will never get committed) with one KEY=VALUE per line, e.g.:
-        DASHBOARD_PASSWORD=whatever-you-want
+        TURSO_DATABASE_URL=libsql://your-db.turso.io
+        TURSO_AUTH_TOKEN=your-turso-token
         SECRET_KEY=any-random-string
         FRED_API_KEY=your-fred-key
         ANTHROPIC_API_KEY=your-anthropic-key
@@ -35,6 +35,7 @@ from functools import wraps
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from werkzeug.security import check_password_hash
 
 import ai_bias
 import auto_sync
@@ -78,7 +79,6 @@ app = Flask(__name__)
 # to show up, same as a .py change would.
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
-DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD")
 
 LOGIN_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -97,7 +97,8 @@ LOGIN_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <form method="post">
   <h1>Felix Trade Journal</h1>
   {error}
-  <input type="password" name="password" placeholder="Password" autofocus>
+  <input type="text" name="username" placeholder="Username" autofocus autocapitalize="off">
+  <input type="password" name="password" placeholder="Password">
   <button type="submit">Enter</button>
 </form>
 </body></html>"""
@@ -105,11 +106,11 @@ LOGIN_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 
 @app.before_request
 def require_login():
-    if not DASHBOARD_PASSWORD:
-        return  # no password configured -- e.g. plain local use, skip the gate entirely
     if request.endpoint == "login":
         return
-    if not session.get("authed"):
+    if db.count_users() == 0:
+        return  # fresh checkout, nobody provisioned yet -- skip the gate entirely
+    if not session.get("user_id"):
         return redirect(url_for("login"))
 
 
@@ -117,10 +118,12 @@ def require_login():
 def login():
     error = ""
     if request.method == "POST":
-        if request.form.get("password") == DASHBOARD_PASSWORD:
-            session["authed"] = True
+        user = db.get_user_by_username((request.form.get("username") or "").strip())
+        password = request.form.get("password") or ""
+        if user and check_password_hash(user["password_hash"], password):
+            session["user_id"] = user["id"]
             return redirect(url_for("index"))
-        error = '<div class="error">Incorrect password.</div>'
+        error = '<div class="error">Incorrect username or password.</div>'
     return LOGIN_PAGE.format(error=error)
 
 
@@ -200,7 +203,7 @@ def static_asset(filename):
 
 @app.get("/api/trades")
 def api_list():
-    return jsonify(db.list_trades())
+    return jsonify(db.list_trades(session["user_id"]))
 
 
 @app.post("/api/trades")
@@ -209,7 +212,7 @@ def api_create():
         fields = clean_payload(request.get_json(force=True))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    new_id = db.insert_trade(fields)
+    new_id = db.insert_trade(session["user_id"], fields)
     return jsonify({"id": new_id}), 201
 
 
@@ -219,13 +222,13 @@ def api_update(trade_id):
         fields = clean_payload(request.get_json(force=True))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    db.update_trade(trade_id, fields)
+    db.update_trade(session["user_id"], trade_id, fields)
     return jsonify({"ok": True})
 
 
 @app.delete("/api/trades/<int:trade_id>")
 def api_delete(trade_id):
-    db.delete_trade(trade_id)
+    db.delete_trade(session["user_id"], trade_id)
     return jsonify({"ok": True})
 
 
@@ -243,7 +246,7 @@ def api_put_setting(key):
 
 @app.get("/api/strategies")
 def api_list_strategies():
-    return jsonify(db.list_strategies())
+    return jsonify(db.list_strategies(session["user_id"]))
 
 
 @app.post("/api/strategies")
@@ -252,13 +255,13 @@ def api_create_strategy():
     name = (body.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name is required"}), 400
-    new_id = db.create_strategy(name, body.get("description") or "")
+    new_id = db.create_strategy(session["user_id"], name, body.get("description") or "")
     return jsonify({"id": new_id}), 201
 
 
 @app.delete("/api/strategies/<int:strategy_id>")
 def api_delete_strategy(strategy_id):
-    db.delete_strategy(strategy_id)
+    db.delete_strategy(session["user_id"], strategy_id)
     return jsonify({"ok": True})
 
 
@@ -353,7 +356,7 @@ def api_analyze():
         return jsonify({"error": "pair is required"}), 400
 
     comparison = fundamentals.compare_pair(pair, db.list_macro())
-    strategy_text = "\n\n".join(f"### {s['name']}\n{s['description'] or ''}" for s in db.list_strategies())
+    strategy_text = "\n\n".join(f"### {s['name']}\n{s['description'] or ''}" for s in db.list_strategies(session["user_id"]))
     try:
         analysis = ai_bias.run_bias_check(pair, strategy_text, comparison, chart_link)
     except RuntimeError as e:
@@ -364,12 +367,10 @@ def api_analyze():
 
 
 if __name__ == "__main__":
-    if not db.DB_PATH.exists():
-        print("No trades.db found yet -- run 'python migrate_from_xlsx.py' first to import your journal.")
-    if DASHBOARD_PASSWORD:
-        print("Password protection is ON.")
+    if db.count_users() == 0:
+        print("No users yet -- run 'python create_user.py <username>' to create your login.")
     else:
-        print("Password protection is OFF (no DASHBOARD_PASSWORD set) -- fine for local use, required before hosting this anywhere reachable by others.")
+        print("Password protection is ON.")
     # Local runs stay on 127.0.0.1 (loopback only) unless HOST is set explicitly.
     # A real deployment (Render, etc.) runs this via gunicorn instead, not this block.
     host = os.environ.get("HOST", "127.0.0.1")
