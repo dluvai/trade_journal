@@ -37,6 +37,7 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, request, send_from_directory, session, url_for
 
 import ai_bias
+import auto_sync
 import backup
 import calendar_view
 import db
@@ -68,6 +69,7 @@ _load_dotenv()
 # this file directly on Render and never runs that block, so a backup
 # trigger placed there would only ever fire during local dev.
 backup.backup_if_needed()
+auto_sync.start()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
