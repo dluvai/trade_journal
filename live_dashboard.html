@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Felix Trade Journal — Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="dashboard-core.css">
 </head>
 <body>
@@ -15,11 +18,12 @@
     </div>
     <div class="controls">
       <div class="segmented" id="yearFilter"></div>
-      <button class="iconbtn" id="themeToggle">Light mode</button>
       <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
       <button class="btn-primary" id="addTradeBtn">+ Add trade</button>
     </div>
   </header>
+
+  <div class="ticker-strip" id="tickerStrip"></div>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="overview">Overview</button>
@@ -88,6 +92,10 @@
   </div>
 
   <div class="tab-panel" id="tab-bias">
+    <div class="panel" id="debtPanel" style="display:none;">
+      <h2>US federal debt sustainability <span class="n" id="debtAsOf"></span></h2>
+      <div id="debtContent"></div>
+    </div>
     <div class="panel">
       <h2>Fundamental bias check</h2>
       <div class="form-grid" style="grid-template-columns: 1fr;">
@@ -100,16 +108,23 @@
       <div id="fundamentalsResult" style="margin-top:16px;"></div>
     </div>
     <div class="panel">
-      <h2>Macro snapshot</h2>
-      <div class="form-actions" style="margin-bottom:14px;">
-        <button class="btn-primary" id="saveMacroBtn">Save macro snapshot</button>
-        <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP, unemployment and CPI for USD/EUR/GBP/JPY from FRED. PMI and AUD/NZD/CHF stay manual.">
-          <span class="spin-icon" id="syncSpinIcon">⟳</span> Sync
-        </button>
-        <span id="macroSaved" class="save-flash"></span>
-        <span id="fredSyncStatus" style="color:var(--text-muted); font-size:12px;"></span>
+      <div class="workspace-head">
+        <h2 style="margin:0;">Macro workspace</h2>
+        <div class="form-actions">
+          <button class="btn-primary" id="saveMacroBtn">Save changes</button>
+          <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP and CPI for every currency, unemployment for USD/GBP/JPY/AUD, and trade balance for every currency except EUR. USD only gets core CPI/PPI/PCE, retail sales and current account -- no fresh free source found for the other six on those. PMI always stays manual.">
+            <span class="spin-icon" id="syncSpinIcon">⟳</span> Sync
+          </button>
+          <span id="macroSaved" class="save-flash"></span>
+          <span id="fredSyncStatus" style="color:var(--text-muted); font-size:12px;"></span>
+        </div>
       </div>
-      <div id="macroCards" class="macro-cards-grid"></div>
+      <div class="ccy-switcher segmented" id="ccySwitcher"></div>
+      <div id="macroWorkspace"></div>
+    </div>
+    <div class="panel">
+      <h2><span id="ccyNewsTitle">USD</span> news</h2>
+      <div class="news-panel-body" id="ccyNewsPanel"></div>
     </div>
   </div>
 
@@ -365,13 +380,54 @@ const CCY_ORDER = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF'];
 // is always the base when paired with anything later in the list (this is
 // why it's EURUSD not USDEUR, USDJPY not JPYUSD, etc).
 const FX_HIERARCHY = ['EUR', 'GBP', 'AUD', 'NZD', 'USD', 'CHF', 'JPY'];
-const METRIC_META = [
-  { key: 'interest_rate', label: 'Rate %', step: '0.01' },
-  { key: 'cpi_yoy', label: 'CPI YoY %', step: '0.01' },
-  { key: 'gdp_yoy', label: 'GDP YoY %', step: '0.01' },
-  { key: 'unemployment', label: 'Unemployment %', step: '0.01' },
-  { key: 'pmi', label: 'PMI', step: '0.1' },
+// Grouped the way the workspace displays them -- e.g. every inflation
+// gauge (headline/core CPI, core PPI, core PCE) sits in one Inflation card
+// instead of four separate tiles. Coverage beyond the original 5 metrics
+// (core CPI/PPI/PCE, retail sales, trade balance, current account) is
+// USD-only -- see fred_sync.py's docstring for why.
+// `applies` lists which currencies a metric is meaningful for -- omitted
+// means every currency. Rate/CPI/unemployment/GDP/PMI are conceptually
+// universal (manual entry makes sense even where nothing auto-syncs), but
+// things like Core PCE are literally a US National Accounts concept -- no
+// point offering an input a non-USD currency can never have real data in.
+const METRIC_GROUPS = [
+  { title: 'Policy', metrics: [
+    { key: 'interest_rate', label: 'Policy rate', suffix: '%', step: '0.01' },
+  ] },
+  { title: 'Inflation', metrics: [
+    { key: 'cpi_yoy', label: 'CPI YoY', suffix: '%', step: '0.01' },
+    { key: 'cpi_mom', label: 'CPI MoM', suffix: '%', step: '0.01', applies: ['USD', 'EUR'] },
+    { key: 'core_cpi_yoy', label: 'Core CPI YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'core_ppi_yoy', label: 'Core PPI YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+    { key: 'core_pce_yoy', label: 'Core PCE YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+  ] },
+  { title: 'Labor', metrics: [
+    { key: 'unemployment', label: 'Unemployment', suffix: '%', step: '0.01' },
+  ] },
+  { title: 'Activity', metrics: [
+    { key: 'retail_sales_yoy', label: 'Retail sales YoY', suffix: '%', step: '0.01', applies: ['USD'] },
+  ] },
+  { title: 'Trade', metrics: [
+    { key: 'trade_balance', label: 'Trade balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF'] },
+  ] },
+  { title: 'Current account', metrics: [
+    { key: 'current_account', label: 'Balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD'] },
+  ] },
+  { title: 'GDP', metrics: [
+    { key: 'gdp_yoy', label: 'GDP YoY', suffix: '%', step: '0.01' },
+  ] },
+  { title: 'PMI', metrics: [
+    { key: 'pmi', label: 'PMI', suffix: '', step: '0.1' },
+  ] },
 ];
+const METRIC_META = METRIC_GROUPS.flatMap(g => g.metrics);
+// { metric_key: 'YYYY-MM-DD' } for USD metrics with a real FRED release
+// calendar entry -- stays {} if FRED_API_KEY isn't set (see fred_calendar.py).
+let RELEASE_CALENDAR = {};
+// { currency: 'YYYY-MM-DD' or null } next policy-rate decision -- see rate_calendar.py.
+let RATE_CALENDAR = {};
+let selectedCcy = 'USD';
+let LATEST_MACRO_ROWS = [];
 // mirrors fundamentals.py SCORED_METRICS -- keep in sync if that changes
 const SCORED_METRICS = [['interest_rate', true], ['gdp_yoy', true], ['unemployment', false], ['pmi', true]];
 
@@ -393,12 +449,51 @@ function computePairBias(baseRow, quoteRow) {
   return baseScore > quoteScore ? 'Bullish' : 'Bearish';
 }
 
-function macroMetricRow(row, meta) {
+function metricRowHtml(row, meta) {
   const v = row[meta.key];
-  return `<div class="macro-metric-row${v == null ? ' is-empty' : ''}">
-      <label>${meta.label}</label>
-      <input type="number" step="${meta.step}" class="macro-input" data-field="${meta.key}" value="${v == null ? '' : v}">
+  const prev = row['prev_' + meta.key];
+  const arrow = (v == null || prev == null || v === prev) ? '' : (v > prev ? '▲' : '▼');
+  const prevText = prev == null ? 'no prior value' : `prev ${meta.prefix || ''}${prev}${meta.suffix}`;
+  return `<div class="metric-row">
+      <div class="metric-row-head">
+        <span class="metric-card-label">${meta.label}</span>
+        ${arrow ? `<span class="metric-arrow">${arrow}</span>` : ''}
+      </div>
+      <input type="number" step="${meta.step}" class="macro-input" data-field="${meta.key}" value="${v == null ? '' : v}" placeholder="—">
+      <div class="metric-card-prev">${prevText}</div>
+      ${nextDateFor(meta.key) ? `<div class="metric-card-next">Next ${meta.key === 'interest_rate' ? 'decision' : 'release'} ${nextDateFor(meta.key)}</div>` : ''}
     </div>`;
+}
+
+// interest_rate's "next" date depends on which currency is selected (a rate
+// decision, from rate_calendar.py); every other metric's "next" date is a
+// fixed USD statistical release (from fred_calendar.py).
+function nextDateFor(metricKey) {
+  if (metricKey === 'interest_rate') return RATE_CALENDAR[selectedCcy] || null;
+  return RELEASE_CALENDAR[metricKey] || null;
+}
+
+function categoryCardHtml(row, group, ccy) {
+  const metrics = group.metrics.filter(m => !m.applies || m.applies.includes(ccy));
+  if (!metrics.length) return '';
+  return `<div class="metric-category-card">
+      <div class="metric-category-title">${group.title}</div>
+      ${metrics.map(m => metricRowHtml(row, m)).join('')}
+    </div>`;
+}
+
+// One-line summary of which watched metrics moved since their last reading,
+// for a quick scan before diving into the individual cards below.
+function quickSignalsHtml(row) {
+  const parts = METRIC_META.map(meta => {
+    const v = row[meta.key], prev = row['prev_' + meta.key];
+    if (v == null || prev == null || v === prev) return null;
+    const arrow = v > prev ? '▲' : '▼';
+    const cls = v > prev ? 'good' : 'critical';
+    return `<span class="signal-item"><span class="signal-label">${meta.label}</span><span class="metric-arrow ${cls}">${arrow}</span> ${meta.prefix || ''}${v}${meta.suffix} <span class="signal-vs">vs ${meta.prefix || ''}${prev}${meta.suffix}</span></span>`;
+  }).filter(Boolean);
+  if (!parts.length) return '';
+  return `<div class="quick-signals"><span class="signal-eyebrow">Quick signals</span>${parts.join('')}</div>`;
 }
 
 // Gold has no rate/GDP/unemployment/PMI of its own, so it can't use the same
@@ -416,44 +511,114 @@ function computeGoldBias(usdRow) {
   return { bias, realYield };
 }
 
-function renderMacroCards(rows) {
+function renderCcySwitcher() {
+  document.getElementById('ccySwitcher').innerHTML = CCY_ORDER.map(c =>
+    `<button data-ccy="${c}" class="${c === selectedCcy ? 'active' : ''}">${c}</button>`
+  ).join('');
+  document.querySelectorAll('#ccySwitcher button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedCcy = btn.dataset.ccy;
+      renderCcySwitcher();
+      renderMacroWorkspace(LATEST_MACRO_ROWS);
+      document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
+      loadCcyNews();
+    });
+  });
+}
+
+// USD-only debt-sustainability snapshot -- see debt_model.py for the formula.
+async function loadDebtSnapshot() {
+  let data;
+  try {
+    data = await (await fetch('/api/debt-snapshot')).json();
+  } catch (e) {
+    return;
+  }
+  if (!data.available) {
+    document.getElementById('debtContent').innerHTML = '<div class="empty">Debt data unavailable right now.</div>';
+    return;
+  }
+  document.getElementById('debtAsOf').textContent = `as of ${data.as_of}`;
+  const s = data.stabilizers || {};
+  const projCls = data.projected_next_year_pct == null ? '' : (data.projected_next_year_pct > data.debt_gdp_pct ? 'critical' : 'good');
+  document.getElementById('debtContent').innerHTML = `
+    <div class="tiles" style="margin-bottom:14px;">
+      <div class="tile"><div class="label">Current debt / GDP</div><div class="value">${data.debt_gdp_pct}%</div></div>
+      <div class="tile"><div class="label">Projected next year</div><div class="value ${projCls}">${data.projected_next_year_pct ?? '—'}%</div></div>
+      <div class="tile"><div class="label">Current deficit</div><div class="value">${data.borrowing_pct_of_gdp}%</div></div>
+      <div class="tile"><div class="label">Nominal GDP growth</div><div class="value">${data.nominal_growth_pct ?? '—'}%</div></div>
+    </div>
+    <div class="quick-signals" title="Each figure solves the debt-dynamics identity for one variable, holding the other two at their current value -- a sensitivity read, not a forecast.">
+      <span class="signal-eyebrow">To hold debt/GDP flat, holding everything else constant</span>
+      <span class="signal-item"><span class="signal-label">Growth needed</span> ${s.growth_needed ?? '—'}%</span>
+      <span class="signal-item"><span class="signal-label">Deficit allowance</span> ${s.deficit_allowance ?? '—'}%</span>
+      <span class="signal-item"><span class="signal-label">Rate needed</span> ${s.rate_needed ?? '—'}%</span>
+      <span class="signal-item"><span class="signal-label">Inflation needed</span> ${s.inflation_needed ?? '—'}%</span>
+    </div>
+  `;
+}
+
+// USD-only real release-calendar dates (see fred_calendar.py) -- silently
+// stays empty if FRED_API_KEY isn't set, no error shown for that case.
+async function loadReleaseCalendar() {
+  try {
+    RELEASE_CALENDAR = await (await fetch('/api/release-calendar')).json();
+  } catch (e) {
+    RELEASE_CALENDAR = {};
+  }
+  renderMacroWorkspace(LATEST_MACRO_ROWS);
+}
+
+// Policy-rate decision dates -- USD/EUR/GBP/JPY/AUD only (see rate_calendar.py
+// for why NZD/CHF aren't included: their sites couldn't be verified by hand).
+async function loadRateCalendar() {
+  try {
+    RATE_CALENDAR = await (await fetch('/api/rate-calendar')).json();
+  } catch (e) {
+    RATE_CALENDAR = {};
+  }
+  renderMacroWorkspace(LATEST_MACRO_ROWS);
+}
+
+// Only the selected currency's data is ever fetched into view/edited at once --
+// the rest sit sidelined behind the switcher instead of all rendering together.
+function renderMacroWorkspace(rows) {
   const byCcy = {};
   rows.forEach(r => { byCcy[r.currency] = r; });
-  document.getElementById('macroCards').innerHTML = CCY_ORDER.map(ccy => {
-    const row = byCcy[ccy] || { currency: ccy };
-    const metricsHtml = METRIC_META.map(m => macroMetricRow(row, m)).join('');
-    let pairsHtml = CCY_ORDER.filter(o => o !== ccy).map(other => {
-      const [baseCcy, quoteCcy] = orderPair(ccy, other);
-      const baseRow = byCcy[baseCcy] || { currency: baseCcy };
-      const quoteRow = byCcy[quoteCcy] || { currency: quoteCcy };
-      const bias = computePairBias(baseRow, quoteRow);
-      const cls = bias === 'Bullish' ? 'WIN' : (bias === 'Bearish' ? 'LOSS' : 'BE');
-      return `<div class="pair-row"><span class="pair-name">${baseCcy}${quoteCcy}</span><span class="badge ${cls}">${bias || 'No data'}</span></div>`;
-    }).join('');
-    if (ccy === 'USD') {
-      const g = computeGoldBias(row);
-      const cls = g.bias === 'Bullish' ? 'WIN' : (g.bias === 'Bearish' ? 'LOSS' : 'BE');
-      const title = g.realYield != null
-        ? `Real yield proxy (rate − CPI) = ${g.realYield}%. Doesn't factor in wars/safe-haven demand -- use your own judgment on top of this.`
-        : 'Needs USD rate and CPI to compute.';
-      pairsHtml += `<div class="pair-row" title="${title}"><span class="pair-name">XAUUSD <span style="color:var(--text-muted); font-weight:400;">(yield proxy)</span></span><span class="badge ${cls}">${g.bias || 'No data'}</span></div>`;
-    }
-    return `<div class="macro-card" data-currency="${ccy}">
-        <div class="macro-card-header">
-          <div class="macro-card-title">${ccy}</div>
-          <div class="macro-card-updated">${row.updated_at ? row.updated_at.slice(0, 10) : 'no data yet'}</div>
-        </div>
-        ${metricsHtml}
-        <hr class="macro-card-divider">
-        <div class="macro-card-section-title">Bias</div>
-        <div class="macro-pairs">${pairsHtml}</div>
-      </div>`;
+  const row = byCcy[selectedCcy] || { currency: selectedCcy };
+  const metricsHtml = METRIC_GROUPS.map(g => categoryCardHtml(row, g, selectedCcy)).join('');
+
+  let pairsRows = CCY_ORDER.filter(o => o !== selectedCcy).map(other => {
+    const [baseCcy, quoteCcy] = orderPair(selectedCcy, other);
+    const baseRow = byCcy[baseCcy] || { currency: baseCcy };
+    const quoteRow = byCcy[quoteCcy] || { currency: quoteCcy };
+    const bias = computePairBias(baseRow, quoteRow);
+    const cls = bias === 'Bullish' ? 'WIN' : (bias === 'Bearish' ? 'LOSS' : 'BE');
+    return `<tr><td class="strong">${baseCcy}${quoteCcy}</td><td><span class="badge ${cls}">${bias || 'No data'}</span></td></tr>`;
   }).join('');
+  if (selectedCcy === 'USD') {
+    const g = computeGoldBias(row);
+    const cls = g.bias === 'Bullish' ? 'WIN' : (g.bias === 'Bearish' ? 'LOSS' : 'BE');
+    const title = g.realYield != null
+      ? `Real yield proxy (rate − CPI) = ${g.realYield}%. Doesn't factor in wars/safe-haven demand -- use your own judgment on top of this.`
+      : 'Needs USD rate and CPI to compute.';
+    pairsRows += `<tr title="${title}"><td class="strong">XAUUSD <span style="color:var(--text-muted); font-weight:400;">(yield proxy)</span></td><td><span class="badge ${cls}">${g.bias || 'No data'}</span></td></tr>`;
+  }
+
+  document.getElementById('macroWorkspace').innerHTML = `
+    ${quickSignalsHtml(row)}
+    <div class="metric-category-grid">${metricsHtml}</div>
+    <div class="macro-updated">Last updated ${row.updated_at ? row.updated_at.slice(0, 10) : 'never'}</div>
+    <div class="macro-card-section-title">${selectedCcy} bias vs other majors</div>
+    <table><thead><tr><th>Instrument</th><th>Bias</th></tr></thead><tbody>${pairsRows}</tbody></table>
+  `;
 }
 
 async function loadMacro() {
-  const rows = await (await fetch('/api/macro')).json();
-  renderMacroCards(rows);
+  LATEST_MACRO_ROWS = await (await fetch('/api/macro')).json();
+  renderCcySwitcher();
+  renderMacroWorkspace(LATEST_MACRO_ROWS);
+  document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
 }
 
 document.getElementById('syncFredBtn').addEventListener('click', async () => {
@@ -477,16 +642,11 @@ document.getElementById('syncFredBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('saveMacroBtn').addEventListener('click', async () => {
-  const cards = document.querySelectorAll('#macroCards .macro-card');
-  for (const card of cards) {
-    const fields = {};
-    card.querySelectorAll('.macro-input').forEach(inp => {
-      fields[inp.dataset.field] = inp.value === '' ? null : (inp.dataset.field === 'bias' ? inp.value : parseFloat(inp.value));
-    });
-    const hasData = Object.values(fields).some(v => v != null && v !== '');
-    if (!hasData) continue; // skip untouched cards so their "updated" date doesn't change
-    await apiSend('PUT', `/api/macro/${card.dataset.currency}`, fields);
-  }
+  const fields = {};
+  document.querySelectorAll('#macroWorkspace .macro-input').forEach(inp => {
+    fields[inp.dataset.field] = inp.value === '' ? null : parseFloat(inp.value);
+  });
+  await apiSend('PUT', `/api/macro/${selectedCcy}`, fields);
   flashSaved('macroSaved');
   loadMacro();
 });
@@ -533,12 +693,78 @@ async function loadFundamentals() {
 document.getElementById('checkFundamentalsBtn').addEventListener('click', loadFundamentals);
 document.getElementById('biasPair').addEventListener('change', loadFundamentals);
 
+// ---------- live price ticker & market news (own data, own styling -- see market_data.py) ----------
+
+function fmtPrice(v) {
+  if (v == null) return '—';
+  const decimals = v >= 100 ? 2 : (v >= 10 ? 3 : 4);
+  return v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function tickerItemHtml(q) {
+  const cls = q.changePct == null ? 'flat' : (q.changePct > 0 ? 'good' : (q.changePct < 0 ? 'critical' : 'flat'));
+  const arrow = q.changePct > 0 ? '▲' : (q.changePct < 0 ? '▼' : '·');
+  const pct = q.changePct == null ? '—' : `${q.changePct > 0 ? '+' : ''}${q.changePct.toFixed(2)}%`;
+  return `<div class="ticker-item">
+    <span class="ti-label">${q.label}</span>
+    <span class="ti-price">${fmtPrice(q.price)}</span>
+    <span class="ti-change ${cls}">${arrow} ${pct}</span>
+  </div>`;
+}
+
+async function loadTicker() {
+  const host = document.getElementById('tickerStrip');
+  try {
+    const quotes = await (await fetch('/api/prices')).json();
+    const itemsHtml = quotes.map(tickerItemHtml).join('');
+    // duplicated back-to-back so the scroll animation loops with no seam
+    host.innerHTML = `<div class="ticker-track">${itemsHtml}${itemsHtml}</div>`;
+  } catch (e) {
+    host.innerHTML = '<div class="ticker-item ti-label">Live prices unavailable right now</div>';
+  }
+}
+
+function timeAgo(unixSeconds) {
+  const diff = Math.max(0, Date.now() / 1000 - unixSeconds);
+  if (diff < 3600) return `${Math.max(1, Math.round(diff / 60))}m ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+  return `${Math.round(diff / 86400)}d ago`;
+}
+
+function renderNewsItems(host, items) {
+  if (!items.length) { host.innerHTML = '<div class="empty">No news available right now.</div>'; return; }
+  host.innerHTML = items.map(n => `
+    <a class="news-item" href="${n.link}" target="_blank" rel="noopener">
+      <div class="news-title">${n.title}</div>
+      <div class="news-meta">${n.publisher}${n.time ? ' · ' + timeAgo(n.time) : ''}</div>
+    </a>`).join('');
+}
+
+// Bias Check's news panel follows whichever currency is selected -- EUR/GBP/AUD/NZD
+// get a real currency-specific feed; USD/JPY/CHF fall back to the combined majors
+// feed server-side (see market_data.py -- no working query exists for those three).
+async function loadCcyNews() {
+  document.getElementById('ccyNewsTitle').textContent = selectedCcy;
+  const host = document.getElementById('ccyNewsPanel');
+  try {
+    renderNewsItems(host, await (await fetch(`/api/news/${selectedCcy}`)).json());
+  } catch (e) {
+    host.innerHTML = '<div class="empty">News unavailable right now.</div>';
+  }
+}
+
 DC.setupTabs();
-DC.setupThemeToggle('themeToggle');
 (async function init() {
   await refreshAndRender();
   loadStrategies();
-  loadMacro();
+  await loadMacro();
+  loadReleaseCalendar();
+  loadRateCalendar();
+  loadDebtSnapshot();
+  loadCcyNews();
+  loadTicker();
+  setInterval(loadTicker, 20000);
+  setInterval(loadCcyNews, 5 * 60000);
 })();
 </script>
 </body>

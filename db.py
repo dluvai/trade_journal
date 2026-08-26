@@ -36,11 +36,6 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS macro (
     currency TEXT PRIMARY KEY,
-    interest_rate REAL,
-    cpi_yoy REAL,
-    gdp_yoy REAL,
-    unemployment REAL,
-    pmi REAL,
     bias TEXT,
     notes TEXT,
     updated_at TEXT
@@ -57,6 +52,27 @@ CREATE TABLE IF NOT EXISTS strategies (
 
 MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF"]
 
+# Single source of truth for every macro metric the app tracks. Their actual
+# table columns (plus a prev_<key> twin for each) are added by the migration
+# below rather than spelled out in SCHEMA -- adding a new metric here is
+# enough, no separate CREATE TABLE edit needed.
+MACRO_METRIC_KEYS = [
+    "interest_rate", "cpi_yoy", "cpi_mom", "core_cpi_yoy", "core_ppi_yoy", "core_pce_yoy",
+    "unemployment", "retail_sales_yoy", "trade_balance", "current_account", "gdp_yoy", "pmi",
+]
+
+
+def _migrate_macro_prev_columns(conn):
+    # Metric columns were added to this table over time, after real databases
+    # already existed -- CREATE TABLE IF NOT EXISTS won't add columns to a
+    # table that's already there, so backfill any missing ones by hand.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(macro)")}
+    needed = list(MACRO_METRIC_KEYS) + [f"prev_{k}" for k in MACRO_METRIC_KEYS]
+    for col in needed:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE macro ADD COLUMN {col} REAL")
+    conn.commit()
+
 
 def get_conn():
     # If DB_PATH points at a directory that doesn't exist yet (e.g. a Render
@@ -66,6 +82,7 @@ def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate_macro_prev_columns(conn)
     return conn
 
 
@@ -219,27 +236,46 @@ def list_macro():
     conn.close()
     result = []
     for c in MAJOR_CURRENCIES:
-        result.append(rows.get(c) or {
-            "currency": c, "interest_rate": None, "cpi_yoy": None, "gdp_yoy": None,
-            "unemployment": None, "pmi": None, "bias": None, "notes": None, "updated_at": None,
-        })
+        blank = {"currency": c, "bias": None, "notes": None, "updated_at": None}
+        for key in MACRO_METRIC_KEYS:
+            blank[key] = None
+            blank[f"prev_{key}"] = None
+        result.append(rows.get(c) or blank)
     return result
 
 
 def upsert_macro(currency, fields):
     now = datetime.now().isoformat(timespec="seconds")
     conn = get_conn()
+    existing_row = conn.execute("SELECT * FROM macro WHERE currency=?", (currency,)).fetchone()
+    existing = dict(existing_row) if existing_row else {}
+
+    # Keep one step of history per metric -- whatever the value *was* moves
+    # into prev_* only when the incoming value actually changes it, so the UI
+    # can show a real latest-vs-prev comparison instead of just a snapshot.
+    new_values, prev_values = {}, {}
+    for key in MACRO_METRIC_KEYS:
+        new_val = fields[key] if key in fields else existing.get(key)
+        old_val = existing.get(key)
+        new_values[key] = new_val
+        if new_val != old_val and old_val is not None:
+            prev_values[key] = old_val
+        else:
+            prev_values[key] = existing.get(f"prev_{key}")
+
+    current_cols = MACRO_METRIC_KEYS
+    prev_cols = [f"prev_{k}" for k in MACRO_METRIC_KEYS]
+    all_cols = ["currency"] + current_cols + prev_cols + ["bias", "notes", "updated_at"]
+    placeholders = ",".join("?" * len(all_cols))
+    update_clause = ",".join(f"{c}=excluded.{c}" for c in current_cols + prev_cols + ["bias", "notes", "updated_at"])
+    values = (
+        [currency] + [new_values[k] for k in current_cols] + [prev_values[k] for k in current_cols]
+        + [fields.get("bias"), fields.get("notes"), now]
+    )
     conn.execute(
-        """INSERT INTO macro (currency, interest_rate, cpi_yoy, gdp_yoy, unemployment, pmi, bias, notes, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(currency) DO UPDATE SET
-               interest_rate=excluded.interest_rate, cpi_yoy=excluded.cpi_yoy, gdp_yoy=excluded.gdp_yoy,
-               unemployment=excluded.unemployment, pmi=excluded.pmi, bias=excluded.bias,
-               notes=excluded.notes, updated_at=excluded.updated_at""",
-        (
-            currency, fields.get("interest_rate"), fields.get("cpi_yoy"), fields.get("gdp_yoy"),
-            fields.get("unemployment"), fields.get("pmi"), fields.get("bias"), fields.get("notes"), now,
-        ),
+        f"INSERT INTO macro ({','.join(all_cols)}) VALUES ({placeholders}) "
+        f"ON CONFLICT(currency) DO UPDATE SET {update_clause}",
+        values,
     )
     conn.commit()
     conn.close()

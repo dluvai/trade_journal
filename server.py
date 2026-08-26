@@ -16,6 +16,18 @@ skips the login screen entirely, exactly like before):
     server, and a login screen gates every page and API route. Also set
     SECRET_KEY (any random string) so login sessions survive a restart --
     without it, everyone gets logged out each time the server restarts.
+
+Local secrets, without retyping them every session:
+    Create a file named .env next to this script (already gitignored -- it
+    will never get committed) with one KEY=VALUE per line, e.g.:
+        DASHBOARD_PASSWORD=whatever-you-want
+        SECRET_KEY=any-random-string
+        FRED_API_KEY=your-fred-key
+        ANTHROPIC_API_KEY=your-anthropic-key
+    Then just run `python server.py` -- no PowerShell $env: commands needed.
+    A real environment variable set in the shell always wins over .env, so
+    this is purely a local convenience, not a replacement for how Render
+    (or any real deployment) is configured.
 """
 import os
 import secrets
@@ -26,10 +38,30 @@ from flask import Flask, jsonify, redirect, request, send_from_directory, sessio
 
 import ai_bias
 import db
+import debt_model
+import fred_calendar
 import fred_sync
 import fundamentals
+import market_data
+import rate_calendar
 
 HERE = Path(__file__).parent
+
+
+def _load_dotenv():
+    env_file = HERE / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv()
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD")
@@ -203,6 +235,34 @@ def api_macro_sync():
     except Exception as e:
         return jsonify({"error": f"FRED sync failed: {e}"}), 502
     return jsonify(report)
+
+
+@app.get("/api/prices")
+def api_prices():
+    return jsonify(market_data.get_quotes())
+
+
+@app.get("/api/news/<currency>")
+def api_currency_news(currency):
+    currency = currency.upper()
+    if currency not in db.MAJOR_CURRENCIES:
+        return jsonify({"error": "unknown currency"}), 400
+    return jsonify(market_data.get_currency_news(currency))
+
+
+@app.get("/api/debt-snapshot")
+def api_debt_snapshot():
+    return jsonify(debt_model.snapshot())
+
+
+@app.get("/api/release-calendar")
+def api_release_calendar():
+    return jsonify(fred_calendar.next_release_dates())
+
+
+@app.get("/api/rate-calendar")
+def api_rate_calendar():
+    return jsonify(rate_calendar.next_decisions())
 
 
 @app.get("/api/fundamentals/<pair>")

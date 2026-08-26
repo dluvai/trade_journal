@@ -658,16 +658,6 @@ const DC = (function () {
     });
   }
 
-  function setupThemeToggle(buttonId) {
-    const btn = document.getElementById(buttonId);
-    btn.addEventListener('click', () => {
-      const root = document.documentElement;
-      const isLight = root.getAttribute('data-theme') === 'light';
-      root.setAttribute('data-theme', isLight ? 'dark' : 'light');
-      btn.textContent = isLight ? 'Light mode' : 'Dark mode';
-    });
-  }
-
   // ---------- orchestration ----------
 
   function renderAll(allTrades, currentYear, opts) {
@@ -696,6 +686,6 @@ const DC = (function () {
 
   return {
     fmtPct, computeStats, computeEquity, computeGroupStats, computeByPair, computeBestWorst,
-    renderAll, setupTabs, setupThemeToggle, exportCsv, isPlanViolation, DAY_ORDER,
+    renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER,
   };
 })();

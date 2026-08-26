@@ -7,12 +7,19 @@ openly served (robots.txt has no restrictions). Verified series freshness by
 hand before wiring anything in -- see the comments below for what's covered
 and what's deliberately left out.
 
-Coverage: USD, EUR, GBP, JPY only, and not every metric for every one of
-those:
+Coverage, and not every metric for every currency:
   - PMI is never included -- it's licensed by S&P Global/ISM, nobody
     redistributes it for free.
-  - AUD, NZD, CHF are not covered -- FRED doesn't carry good free mirrors
-    for them across these metrics.
+  - Current account, core CPI, core PPI, core PCE, and retail sales are
+    USD-only. Checked a same-family series for the other six currencies by
+    hand -- current account exists but stopped updating in Oct 2024 for
+    GBP/JPY/AUD/NZD/CHF (Oct 2022 for EUR) across every variant tried; core
+    CPI is missing or multi-year stale everywhere it exists; retail sales
+    has no working free mirror at all for any of the other six. Rather than
+    show 18-24-month-old numbers as if current, these stay USD-only.
+  - Trade balance covers USD, GBP, JPY, AUD, NZD, CHF (all fresh, monthly,
+    USD-converted) -- EUR's mirror is stuck at Dec 2022, so EUR is the one
+    currency left without it.
   - EUR unemployment is not included -- FRED's Euro-area harmonised
     unemployment mirror (the OECD MEI series) stopped updating in 2023;
     every variant checked was stale by 2+ years. Left manual rather than
@@ -43,31 +50,70 @@ SERIES = {
         "gdp_yoy":       ("GDPC1", "yoy"),                 # Real GDP, quarterly
         "unemployment":  ("UNRATE", "level"),
         "cpi_yoy":       ("CPIAUCSL", "yoy"),               # CPI index, monthly
+        "cpi_mom":       ("CPIAUCSL", "mom"),               # same index, month-over-month
+        "core_cpi_yoy":  ("CPILFESL", "yoy"),               # CPI less food & energy, monthly
+        "core_ppi_yoy":  ("PPIFES", "yoy"),                 # PPI, Final Demand less food & energy, monthly
+        "core_pce_yoy":  ("PCEPILFE", "yoy"),               # Core PCE price index -- the Fed's preferred gauge, monthly
+        "retail_sales_yoy": ("RSAFS", "yoy"),               # Advance retail sales, monthly
+        "trade_balance":    ("BOPGSTB", "level", 0.001),   # Trade balance, goods+services, monthly ($M -> $B)
+        "current_account":  ("IEABC", "level", 0.001),     # Current account balance, quarterly ($M -> $B)
     },
     "EUR": {
         "interest_rate": ("ECBDFR", "level"),               # ECB deposit facility rate
         "gdp_yoy":       ("CLVMEURSCAB1GQEA19", "yoy"),     # Real GDP, Euro Area 19, quarterly
         "cpi_yoy":       ("CP0000EZ19M086NEST", "yoy"),     # HICP index, monthly
+        "cpi_mom":       ("CP0000EZ19M086NEST", "mom"),     # same index, month-over-month
     },
     "GBP": {
         "interest_rate": ("IR3TIB01GBM156N", "level"),      # 3-month interbank rate (BoE-rate proxy)
         "gdp_yoy":       ("NGDPRSAXDCGBQ", "yoy"),          # Real GDP, quarterly
         "unemployment":  ("LRHUTTTTGBM156S", "level"),
         "cpi_yoy":       ("FPCPITOTLZGGBR", "level"),       # World Bank annual inflation
+        "trade_balance": ("XTNTVA01GBM667S", "level", 1e-9),  # $, exchange-rate converted -> $B
     },
     "JPY": {
         "interest_rate": ("IRSTCI01JPM156N", "level"),      # interbank call rate (BOJ-rate proxy)
         "gdp_yoy":       ("JPNRGDPEXP", "yoy"),             # Real GDP, quarterly
         "unemployment":  ("LRHUTTTTJPM156S", "level"),
         "cpi_yoy":       ("FPCPITOTLZGJPN", "level"),       # World Bank annual inflation
+        "trade_balance": ("XTNTVA01JPM667S", "level", 1e-9),  # $, exchange-rate converted -> $B
+    },
+    "AUD": {
+        "interest_rate": ("IRSTCI01AUM156N", "level"),      # interbank rate (RBA cash-rate proxy)
+        "gdp_yoy":       ("NGDPRSAXDCAUQ", "yoy"),          # Real GDP, quarterly
+        "unemployment":  ("LRHUTTTTAUM156S", "level"),
+        "cpi_yoy":       ("FPCPITOTLZGAUS", "level"),       # World Bank annual inflation
+        "trade_balance": ("XTNTVA01AUM667S", "level", 1e-9),  # $, exchange-rate converted -> $B
+    },
+    "NZD": {
+        "interest_rate": ("IR3TIB01NZM156N", "level"),      # 3-month interbank rate (RBNZ OCR proxy)
+        "gdp_yoy":       ("NZLGDPRQPSMEI", "qoq_to_yoy"),   # only available as QoQ -- compounded to an annual figure
+        "cpi_yoy":       ("FPCPITOTLZGNZL", "level"),       # World Bank annual inflation
+        "trade_balance": ("XTNTVA01NZM667S", "level", 1e-9),  # $, exchange-rate converted -> $B
+        # unemployment: no fresh free FRED mirror found for NZ -- stays manual
+    },
+    "CHF": {
+        "interest_rate": ("IR3TIB01CHM156N", "level"),      # 3-month interbank rate (SNB policy-rate proxy)
+        "gdp_yoy":       ("CHEGDPRQPSMEI", "qoq_to_yoy"),   # only available as QoQ -- compounded to an annual figure
+        "cpi_yoy":       ("FPCPITOTLZGCHE", "level"),       # World Bank annual inflation
+        "trade_balance": ("XTNTVA01CHM667S", "level", 1e-9),  # $, exchange-rate converted -> $B
+        # unemployment: no fresh free FRED mirror found for CH -- stays manual
     },
 }
 
 PROXY_NOTES = {
     ("GBP", "interest_rate"): "3-month interbank rate used as a proxy for BoE policy stance, not the literal Bank Rate.",
     ("JPY", "interest_rate"): "Interbank call rate used as a proxy for BOJ policy stance, not the literal policy rate.",
+    ("AUD", "interest_rate"): "Interbank rate used as a proxy for RBA cash-rate stance, not the literal cash rate.",
+    ("NZD", "interest_rate"): "3-month interbank rate used as a proxy for RBNZ OCR stance, not the literal OCR.",
+    ("CHF", "interest_rate"): "3-month interbank rate used as a proxy for SNB policy-rate stance, not the literal policy rate.",
     ("GBP", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
     ("JPY", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
+    ("AUD", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
+    ("NZD", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
+    ("CHF", "cpi_yoy"): "World Bank annual inflation figure -- updates once a year, not monthly.",
+    ("NZD", "gdp_yoy"): "No YoY series available -- compounded from the last 4 quarterly growth readings instead.",
+    ("CHF", "gdp_yoy"): "No YoY series available -- compounded from the last 4 quarterly growth readings instead.",
 }
 
 
@@ -109,6 +155,34 @@ def _yoy(rows):
     return latest_date, round((latest_value / prior_value - 1) * 100, 2)
 
 
+def _mom(rows):
+    if len(rows) < 2:
+        return (rows[-1][0], None) if rows else (None, None)
+    latest_date, latest_value = rows[-1]
+    _, prior_value = rows[-2]
+    if prior_value == 0:
+        return latest_date, None
+    return latest_date, round((latest_value / prior_value - 1) * 100, 2)
+
+
+def _qoq_compounded_to_yoy(rows):
+    # NZ and CH's GDP mirrors on FRED are already quarter-over-quarter growth
+    # rates (confirmed by hand: values oscillate roughly -2..+4, including
+    # negatives -- an index/level series never does that), not an index like
+    # GDPC1/GDPRSAXDC*, so there's nothing to take a ratio of. Compounding
+    # the last 4 quarters gives a genuine annual growth figure that's
+    # comparable to every other currency's YoY GDP number instead of mixing
+    # QoQ and YoY across the currency switcher.
+    if len(rows) < 4:
+        return (rows[-1][0], None) if rows else (None, None)
+    latest_date = rows[-1][0]
+    last4 = [v for _, v in rows[-4:]]
+    compounded = 1.0
+    for q in last4:
+        compounded *= (1 + q / 100)
+    return latest_date, round((compounded - 1) * 100, 2)
+
+
 def fetch_metric(series_id, mode):
     rows = _fetch_series(series_id)
     if not rows:
@@ -116,6 +190,10 @@ def fetch_metric(series_id, mode):
     if mode == "level":
         d, v = rows[-1]
         return d, round(v, 2)
+    if mode == "qoq_to_yoy":
+        return _qoq_compounded_to_yoy(rows)
+    if mode == "mom":
+        return _mom(rows)
     return _yoy(rows)
 
 
@@ -131,12 +209,16 @@ def sync(currencies=None, dry_run=False):
         metrics = SERIES.get(ccy, {})
         detail = {}
         fetched = {}
-        for metric, (series_id, mode) in metrics.items():
+        for metric, spec in metrics.items():
+            series_id, mode = spec[0], spec[1]
+            scale = spec[2] if len(spec) > 2 else 1
             try:
                 as_of, value = fetch_metric(series_id, mode)
             except Exception as e:
                 detail[metric] = {"series_id": series_id, "error": str(e)}
                 continue
+            if value is not None and scale != 1:
+                value = round(value * scale, 2)
             note = PROXY_NOTES.get((ccy, metric))
             detail[metric] = {
                 "series_id": series_id, "as_of": str(as_of) if as_of else None,
@@ -147,15 +229,9 @@ def sync(currencies=None, dry_run=False):
 
         if fetched and not dry_run:
             existing = existing_by_ccy.get(ccy, {})
-            merged = {
-                "interest_rate": existing.get("interest_rate"),
-                "cpi_yoy": existing.get("cpi_yoy"),
-                "gdp_yoy": existing.get("gdp_yoy"),
-                "unemployment": existing.get("unemployment"),
-                "pmi": existing.get("pmi"),
-                "bias": existing.get("bias"),
-                "notes": existing.get("notes"),
-            }
+            merged = {key: existing.get(key) for key in db.MACRO_METRIC_KEYS}
+            merged["bias"] = existing.get("bias")
+            merged["notes"] = existing.get("notes")
             merged.update(fetched)
             db.upsert_macro(ccy, merged)
 
