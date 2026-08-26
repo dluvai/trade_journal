@@ -137,6 +137,7 @@
     </div>
     <div class="panel">
       <h2><span id="ccyNewsTitle">USD</span> news</h2>
+      <div id="ccyNewsNote" style="display:none; color:var(--text-muted); font-size:11.5px; margin:-6px 0 10px;">General forex news, ranked toward this currency -- Yahoo has no dedicated feed for it.</div>
       <div class="news-panel-body" id="ccyNewsPanel"></div>
     </div>
   </div>
@@ -983,10 +984,14 @@ newsModalBackdrop.addEventListener('click', (e) => { if (e.target === newsModalB
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !newsModalBackdrop.classList.contains('hidden')) newsModalBackdrop.classList.add('hidden'); });
 
 // Bias Check's news panel follows whichever currency is selected -- EUR/GBP/AUD/NZD
-// get a real currency-specific feed; USD/JPY/CHF fall back to the combined majors
-// feed server-side (see market_data.py -- no working query exists for those three).
+// get a real currency-specific feed; USD/JPY/CHF/CAD share one combined majors
+// feed server-side, re-ranked toward that currency's own keywords (see
+// market_data.py -- no working per-currency query exists for those four).
+const SHARED_FEED_CCYS = ['USD', 'JPY', 'CHF', 'CAD'];
+
 async function loadCcyNews() {
   document.getElementById('ccyNewsTitle').textContent = selectedCcy;
+  document.getElementById('ccyNewsNote').style.display = SHARED_FEED_CCYS.includes(selectedCcy) ? '' : 'none';
   const host = document.getElementById('ccyNewsPanel');
   try {
     renderNewsItems(host, await (await fetch(`/api/news/${selectedCcy}`)).json());

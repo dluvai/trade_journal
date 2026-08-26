@@ -185,11 +185,12 @@ def _filter_market_moving(items):
 
 
 # Per-currency queries for the Bias Check news panel -- verified by hand.
-# USD-first pairs (USDJPY, USDCHF) and gold only ever return Yahoo's generic
-# "trending" fallback regardless of phrasing (tried "USDJPY forex", "yen
-# dollar", "Bank of Japan yen", all identical junk) -- so JPY and CHF fall
-# back to the combined majors feed below rather than a currency-specific
-# query that doesn't actually exist.
+# USD-first pairs (USDJPY, USDCHF, USDCAD) and USD's own dollar-index symbol
+# only ever return Yahoo's generic "trending" fallback regardless of
+# phrasing (tried "USDJPY forex", "yen dollar", "Bank of Japan yen",
+# "DX-Y.NYB", "dollar index", "loonie" -- all either identical junk or
+# nothing) -- so USD, JPY, CHF, and CAD all share the combined majors feed
+# below rather than a currency-specific query that doesn't actually exist.
 CURRENCY_NEWS_QUERIES = {
     "EUR": ["EURUSD=X"],
     "GBP": ["GBPUSD=X"],
@@ -198,10 +199,34 @@ CURRENCY_NEWS_QUERIES = {
 }
 _MAJORS_FEED = ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X"]
 
+# For the four currencies sharing _MAJORS_FEED, the pool of articles is
+# identical no matter which one you're viewing -- there's no way around
+# that with this data source, but the ORDER doesn't have to be. Re-ranking
+# toward each currency's own keywords means JPY's panel actually surfaces
+# whatever yen/BOJ-relevant items exist in that shared pool first, instead
+# of every one of the four showing the exact same top headlines.
+_RELEVANCE_KEYWORDS = {
+    "USD": ["dollar", "fed ", "federal reserve", "fomc", "u.s.", "treasury", "powell"],
+    "JPY": ["yen", "japan", "boj", "bank of japan"],
+    "CHF": ["franc", "swiss", "snb", "switzerland"],
+    "CAD": ["loonie", "canada", "canadian", "boc", "bank of canada"],
+}
+
+
+def _rerank_by_relevance(items, currency):
+    keywords = _RELEVANCE_KEYWORDS.get(currency)
+    if not keywords:
+        return items
+    def score(it):
+        title = it["title"].lower()
+        return sum(1 for k in keywords if k in title)
+    return sorted(items, key=score, reverse=True)
+
 
 def get_currency_news(currency):
     queries = CURRENCY_NEWS_QUERIES.get(currency, _MAJORS_FEED)
-    return _cached(f"news_{currency}", 60, lambda: _filter_market_moving(_fetch_news_for_queries(queries)))
+    items = _cached(f"news_{currency}", 60, lambda: _filter_market_moving(_fetch_news_for_queries(queries)))
+    return _rerank_by_relevance(items, currency) if currency in _RELEVANCE_KEYWORDS else items
 
 
 _DESCRIPTION_PATTERNS = [
