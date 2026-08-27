@@ -1,134 +1,59 @@
 /* ============ Instrument Panel design system ============
-   Ground is a cool blue-graphite (dark, the app's default) or warm paper
-   (light) -- never a neutral gray -- so the single copper accent reads as a
-   deliberate "needle" against it. Win/loss/warn stay their own semantic
-   hues and never double as the accent. Variable names are kept stable
-   across both themes since dashboard-core.js reads several of them
-   directly (--good, --critical, --muted-fill, --series-1, --surface-1/2,
-   --text-primary, --text-muted) to color JS-generated SVG.
-
-   Theme follows the OS/browser's own light-dark setting (prefers-color-scheme)
-   -- no in-app toggle. Dark is the bare :root default (this app's primary
-   look); prefers-color-scheme: light overrides it.
+   Dark only, deliberately -- no light theme, no OS/system-preference
+   override. Ground is a true charcoal-black, neutral (no blue/violet/green
+   cast), so the single electric-blue accent reads as the only hue in the
+   room. Win/loss/warn stay their own semantic hues and never double as the
+   accent. Variable names are kept stable since dashboard-core.js reads
+   several of them directly (--good, --critical, --muted-fill, --series-1,
+   --surface-1/2, --text-primary, --text-muted) to color JS-generated SVG.
 */
 :root {
   color-scheme: dark;
   --font-ui:        "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:      "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
-  --surface-1:      #12161d;
-  --surface-2:      #1a2029;
-  --page:           #0a0d12;
-  --text-primary:   #eef1f4;
-  --text-secondary: #99a3ad;
-  --text-muted:     #576270;
-  --grid:           rgba(238,241,244,0.09);
-  --baseline:       rgba(238,241,244,0.16);
-  --border:         rgba(238,241,244,0.09);
-  --border-strong:  rgba(238,241,244,0.16);
-  --series-1:       #6d7cf0;
-  --series-1-soft:  rgba(109,124,240,0.16);
+  /* Charcoal ground, one electric-blue "needle" accent -- a single hue
+     carried from near-black to near-white, not a multi-hue mix and not
+     tinted toward any other color. Surfaces stay neutral, just a shade
+     lighter than the ground, same material family. */
+  --surface-1:      #131214;
+  --surface-2:      #19181b;
+  --page:           #0c0c0e;
+  --text-primary:   #f5f4f2;
+  --text-secondary: #a3a0a6;
+  --text-muted:     #68656b;
+  --grid:           rgba(245,244,242,0.09);
+  --baseline:       rgba(245,244,242,0.16);
+  --border:         rgba(245,244,242,0.09);
+  --border-strong:  rgba(245,244,242,0.16);
+  --series-1:       #3b82f6;
+  --series-1-soft:  rgba(59,130,246,0.16);
   --info:           #5b9bd1;
   --good:           #45c988;
   --critical:       #f0655f;
-  --muted-fill:     #3a4048;
-  --warn:           #e2b34a;
-  --shadow:         0 1px 0 rgba(238,241,244,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.65);
-  /* Fixed 3-stop yellow-blue-green sheen -- reused wherever the accent
-     needs gradient depth (buttons, active nav, badges) instead of a flat
-     fill. Deliberately the SAME hex stops in both themes (not derived from
-     --series-1 like the old single-hue version) since this is meant to read
-     as one consistent brand gradient regardless of light/dark. */
-  --accent-gradient: linear-gradient(135deg, #f4c95d 0%, #4c8bf5 50%, #38c98f 100%);
-  /* Translucent card surface, derived from --surface-1 (auto-adapts per
-     theme) -- lets the page's diagonal gradient bleed through panels/tiles
-     just enough that cards read as part of the same surface instead of
-     flat opaque blocks sitting on top of it. */
-  --surface-1-glass: color-mix(in srgb, var(--surface-1) 74%, transparent);
-  /* Diagonal page-background wash, top-left to bottom-right -- IS
-     theme-sensitive (needs its own light/dark stops), so it's redefined in
-     every theme block below alongside --page. */
-  --page-gradient-start: #0a0d12;
-  --page-gradient-end:   #122a4a;
+  --muted-fill:     #3a383c;
+  --warn:           #e0954a;
+  --shadow:         0 1px 0 rgba(245,244,242,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.7);
+  /* Single-hue sheen derived from --series-1 (lighter top-left, truer
+     middle, darker bottom-right) -- reused wherever the accent needs
+     gradient depth (buttons, active nav, badges) instead of a flat fill. */
+  --accent-gradient: linear-gradient(135deg,
+    color-mix(in srgb, var(--series-1) 90%, white) 0%,
+    var(--series-1) 55%,
+    color-mix(in srgb, var(--series-1) 85%, black) 100%);
+  /* Translucent card surface, derived from --surface-1 -- lets the page's
+     diagonal gradient bleed through panels/tiles just enough that cards
+     read as part of the same surface instead of flat opaque blocks
+     sitting on top of it. */
+  --surface-1-glass: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  /* Barely-there diagonal depth, top-left to bottom-right -- deliberately
+     close in value to --page (charcoal to charcoal) so it reads as subtle
+     lighting, never as a visible color wash. */
+  --page-gradient-start: #0c0c0e;
+  --page-gradient-end:   #0f2926;
 }
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --surface-1:      #ffffff;
-    --surface-2:      #fbf9f5;
-    --page:           #f5f3ef;
-    --text-primary:   #14181f;
-    --text-secondary: #545e68;
-    --text-muted:     #8b929b;
-    --grid:           rgba(18,22,28,0.11);
-    --baseline:       rgba(18,22,28,0.20);
-    --border:         rgba(18,22,28,0.11);
-    --border-strong:  rgba(18,22,28,0.20);
-    --series-1:       #4338ca;
-    --series-1-soft:  rgba(67,56,202,0.14);
-    --info:           #3574a5;
-    --good:           #1f9d5c;
-    --critical:       #cf3f3a;
-    --muted-fill:     #dcd7cd;
-    --warn:           #a9791a;
-    --shadow:         0 1px 2px rgba(18,22,28,0.05), 0 10px 24px -16px rgba(18,22,28,0.16);
-    --page-gradient-start: #eef4fc;
-    --page-gradient-end:   #cfe0f7;
-  }
-}
-/* Manual theme override (profile page toggle, persisted via localStorage) --
-   mirrors the prefers-color-scheme values above exactly, but as an
-   attribute selector so an explicit in-app choice can win over the OS
-   setting in either direction. "System" (no attribute) keeps the media
-   query behavior untouched. */
-:root[data-theme="light"] {
-  color-scheme: light;
-  --surface-1:      #ffffff;
-  --surface-2:      #fbf9f5;
-  --page:           #f5f3ef;
-  --text-primary:   #14181f;
-  --text-secondary: #545e68;
-  --text-muted:     #8b929b;
-  --grid:           rgba(18,22,28,0.11);
-  --baseline:       rgba(18,22,28,0.20);
-  --border:         rgba(18,22,28,0.11);
-  --border-strong:  rgba(18,22,28,0.20);
-  --series-1:       #4338ca;
-  --series-1-soft:  rgba(67,56,202,0.14);
-  --info:           #3574a5;
-  --good:           #1f9d5c;
-  --critical:       #cf3f3a;
-  --muted-fill:     #dcd7cd;
-  --warn:           #a9791a;
-  --shadow:         0 1px 2px rgba(18,22,28,0.05), 0 10px 24px -16px rgba(18,22,28,0.16);
-  --page-gradient-start: #eef4fc;
-  --page-gradient-end:   #cfe0f7;
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --surface-1:      #12161d;
-  --surface-2:      #1a2029;
-  --page:           #0a0d12;
-  --text-primary:   #eef1f4;
-  --text-secondary: #99a3ad;
-  --text-muted:     #576270;
-  --grid:           rgba(238,241,244,0.09);
-  --baseline:       rgba(238,241,244,0.16);
-  --border:         rgba(238,241,244,0.09);
-  --border-strong:  rgba(238,241,244,0.16);
-  --series-1:       #6d7cf0;
-  --series-1-soft:  rgba(109,124,240,0.16);
-  --info:           #5b9bd1;
-  --good:           #45c988;
-  --critical:       #f0655f;
-  --muted-fill:     #3a4048;
-  --warn:           #e2b34a;
-  --shadow:         0 1px 0 rgba(238,241,244,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.65);
-  --page-gradient-start: #0a0d12;
-  --page-gradient-end:   #122a4a;
-}
-/* High-contrast: relative adjustments off whatever theme is already
-   active, same color-mix technique as --accent-gradient above -- avoids
-   needing separate light-high/dark-high palettes. */
+/* High-contrast: relative adjustments off the dark palette above, same
+   color-mix technique as --accent-gradient -- a real accessibility toggle,
+   unrelated to (and unaffected by removing) the theme choice above. */
 :root[data-contrast="high"] {
   --border:         color-mix(in srgb, var(--text-primary) 32%, transparent);
   --border-strong:  color-mix(in srgb, var(--text-primary) 48%, transparent);

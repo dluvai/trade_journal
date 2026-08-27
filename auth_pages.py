@@ -14,27 +14,103 @@ before passing it to render().
 """
 
 _STYLE = """
-  html,body{margin:0;height:100%;background:#0d0d0d;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+  html,body{margin:0;height:100%;color:#f5f4f2;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    background:linear-gradient(135deg,#0c0c0e 0%,#0f2926 100%);background-attachment:fixed;}
   .auth-shell{display:flex;min-height:100vh;}
-  .auth-art{flex:1.7;position:relative;
-    background:linear-gradient(135deg,#14121f,#0d0d0d);border-right:1px solid rgba(255,255,255,0.08);}
-  .auth-brand{position:absolute;top:28px;left:32px;font-size:15px;font-weight:700;}
-  .auth-art-inner{position:absolute;bottom:64px;left:32px;right:32px;}
-  .auth-art-inner h2{font-size:26px;margin:0 0 8px;letter-spacing:0.5px;}
-  .auth-art-inner p{font-size:13.5px;color:#9a9a97;margin:0;}
+  .auth-art{flex:1.7;position:relative;overflow:hidden;border-right:1px solid rgba(245,244,242,0.08);
+    background-image:
+      linear-gradient(rgba(245,244,242,0.05) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(245,244,242,0.05) 1px,transparent 1px);
+    background-size:34px 34px;
+    background-position:center;}
+  .auth-art::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(circle at 30% 20%,rgba(59,130,246,0.16),transparent 55%);
+    pointer-events:none;}
+  .auth-demo-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    padding:88px 44px 200px;box-sizing:border-box;}
+
+  /* Live demo: a trade gets typed into a form, saved, then the dashboard
+     behind it updates -- the actual product loop, not decoration. Runs on
+     a repeating JS timeline (see render()'s script) since coordinating
+     "type field 1, then 2, then save, then swap cards, then draw the new
+     point" is far more legible as a short sequence than as one giant CSS
+     percentage-keyframe animation. */
+  .journal-demo{position:relative;width:100%;max-width:380px;height:290px;margin:0 auto;z-index:2;}
+  .demo-card{position:absolute;inset:0;background:rgba(28,27,31,0.4);
+    backdrop-filter:blur(30px) saturate(1.7);-webkit-backdrop-filter:blur(30px) saturate(1.7);
+    border:1px solid rgba(245,244,242,0.16);border-radius:14px;padding:22px;box-sizing:border-box;
+    box-shadow:0 24px 50px -20px rgba(0,0,0,0.55), inset 1px 0 0 rgba(255,255,255,0.06);
+    transition:opacity .5s ease,transform .5s ease;overflow:hidden;}
+  .demo-card::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+    background:linear-gradient(160deg,rgba(255,255,255,0.08) 0%,rgba(255,255,255,0) 30%,rgba(255,255,255,0) 70%,rgba(255,255,255,0.04) 100%);}
+  .demo-card > *{position:relative;z-index:1;}
+  .demo-form-head{font-size:12px;font-weight:700;color:#a3a0a6;text-transform:uppercase;letter-spacing:.06em;margin-bottom:18px;}
+  .demo-field{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid rgba(245,244,242,0.08);}
+  .demo-label{font-size:12.5px;color:#68656b;}
+  .demo-type{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13.5px;color:#f5f4f2;
+    display:inline-block;overflow:hidden;white-space:nowrap;width:0;transition:width .45s ease;
+    border-right:2px solid transparent;}
+  .demo-type.filled{border-right-color:#3b82f6;}
+  .demo-save-btn{width:100%;margin-top:20px;padding:11px;border-radius:8px;border:none;color:#fff;
+    font-weight:700;font-size:13.5px;font-family:inherit;cursor:default;
+    background:linear-gradient(135deg,#93c5fd 0%,#3b82f6 55%,#1d4ed8 100%);
+    transition:transform .15s ease,box-shadow .15s ease;}
+  .demo-save-btn.clicked{transform:scale(.96);box-shadow:0 0 0 7px rgba(59,130,246,0.22);}
+  .demo-form.hide{opacity:0;transform:translateY(-12px);}
+  .demo-dash{opacity:0;transform:translateY(12px);}
+  .demo-dash.show{opacity:1;transform:translateY(0);}
+  .demo-dash-tiles{display:flex;gap:12px;margin-bottom:16px;}
+  .demo-tile{flex:1;background:rgba(245,244,242,0.04);border-radius:9px;padding:10px 12px;}
+  .demo-tile .l{display:block;font-size:9.5px;color:#68656b;text-transform:uppercase;letter-spacing:.05em;}
+  .demo-tile .v{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:16px;font-weight:600;margin-top:4px;}
+  .demo-tile .v.good{color:#45c988;}
+  .demo-chart{width:100%;height:72px;margin-bottom:16px;display:block;}
+  .demo-chart-base{fill:none;stroke:#3b82f6;stroke-width:2;opacity:.45;}
+  .demo-chart-new{fill:none;stroke:#45c988;stroke-width:2.5;stroke-linecap:round;
+    stroke-dasharray:60;stroke-dashoffset:60;transition:stroke-dashoffset .6s ease;}
+  .demo-chart-new.drawn{stroke-dashoffset:0;}
+  .demo-row{display:flex;justify-content:space-between;padding:11px 12px;border-radius:8px;
+    background:rgba(69,201,136,0.1);font-size:12.5px;opacity:0;transform:translateY(6px);
+    transition:opacity .4s ease,transform .4s ease;}
+  .demo-row.show{opacity:1;transform:translateY(0);}
+  .demo-row .good{color:#45c988;font-weight:600;}
+  @media (prefers-reduced-motion:reduce){.demo-card,.demo-type,.demo-save-btn,.demo-chart-new,.demo-row{transition:none;}}
+
+  .auth-art-inner{position:absolute;bottom:64px;left:32px;right:32px;z-index:2;}
+  .auth-brand-mark{display:flex;align-items:center;gap:16px;margin-bottom:14px;}
+  .auth-brand-mark svg{width:46px;height:46px;padding:10px;border-radius:13px;flex:none;color:#fff;box-sizing:border-box;
+    background:linear-gradient(135deg,#93c5fd 0%,#3b82f6 55%,#1d4ed8 100%);
+    box-shadow:0 10px 26px -8px rgba(59,130,246,0.55);}
+  .auth-art-inner h2{font-size:46px;margin:0;letter-spacing:-0.01em;line-height:1;}
+  .auth-art-inner p{font-size:14px;color:#a3a0a6;margin:0;}
   .auth-form-col{flex:1;display:flex;align-items:center;justify-content:flex-end;padding:24px 64px;box-sizing:border-box;}
-  .card{background:#1a1a19;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:32px 28px;width:300px;max-width:100%;box-sizing:border-box;}
+  /* "Liquid glass": very translucent + heavily blurred/saturated so the
+     grid texture and blue glow behind visibly bleed through, plus a
+     diagonal light sheen (::before) so it reads as glass, not a tinted
+     panel -- same treatment used for the journal-demo cards below. */
+  .card{position:relative;background:rgba(28,27,31,0.4);
+    backdrop-filter:blur(30px) saturate(1.7);-webkit-backdrop-filter:blur(30px) saturate(1.7);
+    border:1px solid rgba(245,244,242,0.16);border-radius:16px;padding:32px 28px;width:300px;max-width:100%;
+    box-sizing:border-box;box-shadow:0 24px 56px -24px rgba(0,0,0,0.7), inset 1px 0 0 rgba(255,255,255,0.06);
+    overflow:hidden;}
+  .card::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+    background:linear-gradient(160deg,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0) 30%,rgba(255,255,255,0) 70%,rgba(255,255,255,0.04) 100%);}
+  .card > *{position:relative;z-index:1;}
   h1{font-size:16px;margin:0 0 6px;}
-  .sub{font-size:12.5px;color:#9a9a97;margin:0 0 16px;}
-  input,select{width:100%;background:#212120;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;
+  .sub{font-size:12.5px;color:#a3a0a6;margin:0 0 16px;}
+  input,select{width:100%;background:rgba(245,244,242,0.06);border:1px solid rgba(245,244,242,0.12);border-radius:6px;color:#f5f4f2;
     padding:9px 10px;font-size:14px;box-sizing:border-box;margin-bottom:12px;}
-  button{width:100%;background:#6d7cf0;border:none;border-radius:8px;color:#fff;font-weight:650;padding:10px;
-    font-size:13.5px;cursor:pointer;}
-  button.secondary{background:#2a2a28;}
-  .error{color:#e66767;font-size:12.5px;margin-bottom:10px;}
-  .info{color:#7ec4a3;font-size:12.5px;margin-bottom:10px;}
+  input:focus,select:focus{outline:none;border-color:#3b82f6;}
+  button{width:100%;background:linear-gradient(135deg,#93c5fd 0%,#3b82f6 55%,#1d4ed8 100%);
+    border:none;border-radius:8px;color:#fff;font-weight:700;padding:10px;
+    font-size:13.5px;cursor:pointer;transition:filter .15s ease,transform .15s ease;}
+  button:hover{filter:brightness(1.08);}
+  button:active{transform:translateY(1px);}
+  button.secondary{background:rgba(245,244,242,0.08);color:#f5f4f2;font-weight:600;}
+  .error{color:#f0837e;font-size:12.5px;margin-bottom:10px;}
+  .info{color:#6fd3a6;font-size:12.5px;margin-bottom:10px;}
   .links{margin-top:14px;font-size:12.5px;text-align:center;}
-  .links a{color:#8f9cf5;text-decoration:none;}
+  .links a{color:#7fb0f7;text-decoration:none;}
   .links a:hover{text-decoration:underline;}
   form + form{margin-top:10px;}
   @media (max-width:760px){.auth-art{display:none;} .auth-form-col{justify-content:center;padding:16px;}}
@@ -48,9 +124,40 @@ def render(title, body):
 <style>{_STYLE}</style></head><body>
 <div class="auth-shell">
   <div class="auth-art">
-    <div class="auth-brand">SteadFast</div>
+    <div class="auth-demo-wrap">
+      <div class="journal-demo">
+        <div class="demo-card demo-form" id="demoForm">
+          <div class="demo-form-head">New Trade</div>
+          <div class="demo-field"><span class="demo-label">Pair</span><span class="demo-type" id="demoField0" data-full="XAUUSD"></span></div>
+          <div class="demo-field"><span class="demo-label">Direction</span><span class="demo-type" id="demoField1" data-full="Long"></span></div>
+          <div class="demo-field"><span class="demo-label">RR</span><span class="demo-type" id="demoField2" data-full="2.4R"></span></div>
+          <button type="button" class="demo-save-btn" id="demoSaveBtn">Save Trade</button>
+        </div>
+        <div class="demo-card demo-dash" id="demoDash">
+          <div class="demo-dash-tiles">
+            <div class="demo-tile"><span class="l">Win Rate</span><span class="v">67%</span></div>
+            <div class="demo-tile"><span class="l">Total Return</span><span class="v good">+20.4%</span></div>
+          </div>
+          <svg class="demo-chart" viewBox="0 0 300 90" preserveAspectRatio="none" aria-hidden="true">
+            <path class="demo-chart-base" d="M0,72 L40,64 L80,68 L120,50 L160,56 L200,36 L240,44"/>
+            <path class="demo-chart-new" id="demoChartNew" d="M240,44 L280,18"/>
+          </svg>
+          <div class="demo-row" id="demoNewRow">
+            <span>XAUUSD</span><span>Long</span><span class="good">+2.4R</span>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="auth-art-inner">
-      <h2>SteadFast</h2>
+      <div class="auth-brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 17l6-6 4 4 8-8"/>
+          <path d="M17 7h4v4"/>
+          <circle cx="9" cy="11" r="1.4" fill="currentColor" stroke="none"/>
+          <circle cx="13" cy="15" r="1.4" fill="currentColor" stroke="none"/>
+        </svg>
+        <h2>SteadFast</h2>
+      </div>
       <p>Discipline. Patience. Clarity.</p>
     </div>
   </div>
@@ -58,11 +165,56 @@ def render(title, body):
 {body}
   </div></div>
 </div>
+<script>
+(function() {{
+  var form = document.getElementById('demoForm');
+  var dash = document.getElementById('demoDash');
+  if (!form || !dash) return;
+  var fields = [document.getElementById('demoField0'), document.getElementById('demoField1'), document.getElementById('demoField2')];
+  var saveBtn = document.getElementById('demoSaveBtn');
+  var chartNew = document.getElementById('demoChartNew');
+  var newRow = document.getElementById('demoNewRow');
+  fields.forEach(function(f) {{ f.textContent = f.dataset.full; }});
+
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {{
+    fields.forEach(function(f) {{ f.style.width = f.dataset.full.length + 'ch'; f.classList.add('filled'); }});
+    dash.classList.add('show'); form.classList.add('hide');
+    chartNew.classList.add('drawn'); newRow.classList.add('show');
+    return;
+  }}
+
+  function resetCycle() {{
+    fields.forEach(function(f) {{ f.style.width = '0'; f.classList.remove('filled'); }});
+    saveBtn.classList.remove('clicked');
+    form.classList.remove('hide');
+    dash.classList.remove('show');
+    chartNew.classList.remove('drawn');
+    newRow.classList.remove('show');
+  }}
+
+  function runCycle() {{
+    resetCycle();
+    var t = 400;
+    fields.forEach(function(f) {{
+      setTimeout(function() {{ f.style.width = f.dataset.full.length + 'ch'; f.classList.add('filled'); }}, t);
+      t += 550;
+    }});
+    setTimeout(function() {{ saveBtn.classList.add('clicked'); }}, t + 200);
+    setTimeout(function() {{ saveBtn.classList.remove('clicked'); form.classList.add('hide'); }}, t + 500);
+    setTimeout(function() {{ dash.classList.add('show'); }}, t + 900);
+    setTimeout(function() {{ chartNew.classList.add('drawn'); newRow.classList.add('show'); }}, t + 1300);
+  }}
+
+  runCycle();
+  setInterval(runCycle, 7000);
+}})();
+</script>
 </body></html>"""
 
 
 LOGIN_PAGE = """<form method="post">
-  <h1>SteadFast</h1>
+  <h1>Welcome Back</h1>
   {error}
   <input type="text" name="username" placeholder="Username" autofocus autocapitalize="off">
   <input type="password" name="password" placeholder="Password">

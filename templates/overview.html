@@ -3,13 +3,13 @@
 {% block header_controls %}<div id="accountFilter"></div>{% endblock %}
 {% block ticker %}<div class="ticker-strip" id="tickerStrip"></div>{% endblock %}
 {% block content %}
+<div class="panel-controls-row" style="margin-top:0;">
+  <div id="dateRangeFilter"></div>
+</div>
 <div class="tiles" id="tiles"></div>
 <div class="panel" id="accountComparePanel" hidden>
   <h2>Account Comparison</h2>
   <div id="accountCompareTable"></div>
-</div>
-<div class="panel-controls-row">
-  <div id="dateRangeFilter"></div>
 </div>
 <div class="panel">
   <h2>Equity Curve</h2>

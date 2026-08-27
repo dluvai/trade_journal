@@ -34,6 +34,7 @@ import os
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -124,13 +125,18 @@ def next_release_dates():
     if not api_key:
         return {}
 
+    # One HTTP round-trip per unique release_id (up to the 10s timeout each)
+    # -- fetched in parallel rather than sequentially, since a cold cache
+    # (a fresh process, or the first Macros-tab visit in 6 hours) otherwise
+    # means the page waits on up to 8 requests back to back.
+    unique_ids = sorted(set(METRIC_RELEASE_IDS.values()))
+    with ThreadPoolExecutor(max_workers=len(unique_ids)) as pool:
+        fetched = dict(zip(unique_ids, pool.map(lambda rid: _get_release_dates(rid, api_key, limit=1), unique_ids)))
+
     result = {}
-    seen_releases = {}
     for metric, release_id in METRIC_RELEASE_IDS.items():
-        if release_id not in seen_releases:
-            dates = _get_release_dates(release_id, api_key, limit=1)
-            seen_releases[release_id] = dates[0] if dates else None
-        result[metric] = seen_releases[release_id]
+        dates = fetched[release_id]
+        result[metric] = dates[0] if dates else None
     return result
 
 

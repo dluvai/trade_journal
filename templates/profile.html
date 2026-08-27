@@ -92,10 +92,6 @@
 
 <div class="panel">
   <h2>Appearance</h2>
-  <div class="field" style="margin-bottom:14px;">
-    <label>Theme</label>
-    <div class="segmented" id="themeToggle"></div>
-  </div>
   <div class="field">
     <label>Contrast</label>
     <div class="segmented" id="contrastToggle"></div>
@@ -142,11 +138,6 @@
       });
     });
   }
-
-  buildToggle('themeToggle',
-    [['null', 'System'], ['light', 'Light'], ['dark', 'Dark']],
-    DC.getStoredTheme() || 'null',
-    (v) => DC.setTheme(v));
 
   buildToggle('contrastToggle',
     [['null', 'Normal'], ['high', 'High']],

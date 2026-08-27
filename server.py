@@ -56,6 +56,7 @@ import email_sender
 import fred_calendar
 import fundamentals
 import import_trades
+import landing_page
 import macro_sync
 import market_data
 import rate_calendar
@@ -92,7 +93,7 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
 PUBLIC_ENDPOINTS = {
-    "login", "signup", "verify_email", "resend_verification_code",
+    "index", "login", "signup", "verify_email", "resend_verification_code",
     "verify_email_resume", "forgot_password", "reset_password",
 }
 
@@ -113,13 +114,20 @@ def require_login():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
+    is_json = request.method == "POST" and request.is_json
     if request.method == "POST":
-        user = db.get_user_by_username((request.form.get("username") or "").strip())
-        password = request.form.get("password") or ""
+        source = request.get_json(silent=True) or {} if is_json else request.form
+        user = db.get_user_by_username((source.get("username") or "").strip())
+        password = source.get("password") or ""
         if user and check_password_hash(user["password_hash"], password):
             session["user_id"] = user["id"]
+            if is_json:
+                return jsonify({"ok": True, "redirect": url_for("index")})
             return redirect(url_for("index"))
-        error = '<div class="error">Incorrect username or password.</div>'
+        error = "Incorrect username or password."
+        if is_json:
+            return jsonify({"error": error}), 400
+        error = f'<div class="error">{error}</div>'
     return auth_pages.render("Login", auth_pages.LOGIN_PAGE.format(error=error))
 
 
@@ -520,9 +528,13 @@ def clean_payload(body):
 
 # Kept named `index`, still bound to `/` -- login() redirects to
 # url_for("index") on success, so renaming this would silently break that.
+# Public (see PUBLIC_ENDPOINTS): anonymous visitors get the marketing
+# landing page here instead of being bounced straight to /login.
 @app.get("/")
 def index():
-    return redirect(url_for("overview"))
+    if session.get("user_id"):
+        return redirect(url_for("overview"))
+    return landing_page.render()
 
 
 NAV_ITEMS = [

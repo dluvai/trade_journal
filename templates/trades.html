@@ -3,18 +3,18 @@
 {% block header_controls %}<div id="accountFilter"></div>{% endblock %}
 {% block add_trade_btn %}<button class="btn-primary" id="addTradeBtn">+ Add Trade</button>{% endblock %}
 {% block content %}
-<div class="form-actions" style="margin-bottom:14px;">
-  <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
-  <button class="iconbtn" id="importCsvBtn">Import</button>
+<div class="form-actions" style="margin-bottom:14px; justify-content:space-between;">
+  <div class="form-actions" style="margin:0;">
+    <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
+    <button class="iconbtn" id="importCsvBtn">Import</button>
+  </div>
+  <div id="dateRangeFilter"></div>
 </div>
 <div class="panel" id="accountComparePanel" hidden>
   <h2>Account Comparison</h2>
   <div id="accountCompareTable"></div>
 </div>
 <div id="bestWorstTrades"></div>
-<div class="panel-controls-row">
-  <div id="dateRangeFilter"></div>
-</div>
 <div class="panel">
   <h2>Trades</h2>
   <div class="table-scroll"><div id="tradesTable"></div></div>
@@ -78,10 +78,17 @@ function onEditTrade(id) {
   if (t) DC.openEditTradeModal(t);
 }
 
+// Re-fetches trades and re-renders in place -- used after add/edit/delete/
+// import so none of those actions need a full page reload.
+async function refreshTrades() {
+  ALL_TRADES = await DC.fetchTrades();
+  render();
+}
+
 async function onDeleteTrade(id) {
   if (!confirm('Delete this trade? This cannot be undone.')) return;
   await DC.deleteTrade(id);
-  window.location.reload();
+  await refreshTrades();
 }
 
 function accountFilteredTrades() {
@@ -133,7 +140,7 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
   document.getElementById('importCsvBtn').addEventListener('click', openModal);
   document.getElementById('importCancelBtn1').addEventListener('click', closeModal);
   document.getElementById('importCancelBtn2').addEventListener('click', closeModal);
-  document.getElementById('importCloseBtn').addEventListener('click', () => { closeModal(); window.location.reload(); });
+  document.getElementById('importCloseBtn').addEventListener('click', () => { closeModal(); refreshTrades(); });
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
 
   function renderMappingTable() {
@@ -203,6 +210,7 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
     ALL_ACCOUNTS = accounts;
     render();
   });
+  DC.setTradeSavedHandler(refreshTrades);
   render();
 })();
 </script>

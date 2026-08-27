@@ -1157,6 +1157,12 @@ const DC = (function () {
   // ---------- global add/edit trade modal (global chrome, present on every page) ----------
 
   let tradeModalState = null; // { editingId } once initialized
+  // A page registers this to re-fetch and re-render its own view in place
+  // after a save -- falls back to a full reload if no page has claimed it
+  // (e.g. the modal is technically reachable from any page via base.html,
+  // even though only Trades actually wires up Add/Edit today).
+  let tradeSavedHandler = null;
+  function setTradeSavedHandler(fn) { tradeSavedHandler = fn; }
 
   // Exposed so a page's own script can look a trade up by id (from its own
   // locally-fetched ALL_TRADES) and hand the full object to this shared modal --
@@ -1197,9 +1203,9 @@ const DC = (function () {
 
   // Wires the global Add/Edit Trade modal (present in base.html on every
   // page). Populates the strategy dropdown itself so no page needs to fetch
-  // strategies just to support the modal. On save, reloads the current page
-  // rather than trying to maintain a cross-page re-render contract -- a
-  // deliberate simplification now that navigation is real page loads.
+  // strategies just to support the modal. On save, hands off to whatever
+  // the current page registered via setTradeSavedHandler (re-fetch +
+  // re-render in place); falls back to a reload if nothing registered.
   function initTradeModal() {
     const modalBackdrop = document.getElementById('modalBackdrop');
     if (!modalBackdrop) return;
@@ -1254,7 +1260,9 @@ const DC = (function () {
       try {
         if (tradeModalState.editingId) await apiSend('PUT', `/api/trades/${tradeModalState.editingId}`, payload);
         else await apiSend('POST', '/api/trades', payload);
-        window.location.reload();
+        closeForm();
+        if (tradeSavedHandler) await tradeSavedHandler();
+        else window.location.reload();
       } catch (err) {
         formError.textContent = err.message;
       }
@@ -1285,25 +1293,16 @@ const DC = (function () {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   }
 
-  // ---------- theme / contrast (client-only, localStorage) ----------
-  // The first persisted UI preference in this app -- deliberately kept to
-  // localStorage only, not synced to the DB or across devices, since this
-  // is a per-browser cosmetic choice, not account data.
-  function applyTheme(theme) {
-    theme ? document.documentElement.setAttribute('data-theme', theme) : document.documentElement.removeAttribute('data-theme');
-  }
+  // ---------- contrast (client-only, localStorage) ----------
+  // Dark is the only theme this app offers -- see dashboard-core.css's
+  // header comment. Contrast stays a real, separate accessibility toggle.
   function applyContrast(level) {
     level === 'high' ? document.documentElement.setAttribute('data-contrast', 'high') : document.documentElement.removeAttribute('data-contrast');
-  }
-  function setTheme(theme) {
-    theme ? localStorage.setItem('sf-theme', theme) : localStorage.removeItem('sf-theme');
-    applyTheme(theme);
   }
   function setContrast(level) {
     level === 'high' ? localStorage.setItem('sf-contrast', 'high') : localStorage.removeItem('sf-contrast');
     applyContrast(level);
   }
-  function getStoredTheme() { return localStorage.getItem('sf-theme'); }
   function getStoredContrast() { return localStorage.getItem('sf-contrast'); }
 
   return {
@@ -1311,8 +1310,8 @@ const DC = (function () {
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
     apiSend, fetchTrades, fetchStrategies, fetchTradingAccounts, deleteTrade,
     renderAccountFilter, renderAccountComparisonTable, openAccountManageModal,
-    initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initMobileSidebar,
-    setTheme, setContrast, getStoredTheme, getStoredContrast,
+    initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initMobileSidebar, setTradeSavedHandler,
+    setContrast, getStoredContrast,
     computeDateRangeBounds, filterTradesByRange, renderDateRangeFilter, ALL_TIME_RANGE, DATE_RANGE_PRESETS, localTodayStr,
     defaultDateRange,
   };
