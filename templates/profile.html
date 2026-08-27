@@ -6,26 +6,34 @@
 <div class="panel">
   <h2>Account</h2>
   <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:center; margin-bottom:20px;">
-    {% if user.avatar_updated_at %}
-      <img src="{{ url_for('avatar', user_id=user.id) }}?v={{ user.avatar_updated_at }}"
-           alt="Avatar" style="width:72px; height:72px; border-radius:50%; object-fit:cover; border:1px solid var(--border);">
-    {% else %}
-      <div style="width:72px; height:72px; border-radius:50%; background:var(--accent-gradient); color:#fff;
-                  display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700;">
-        {{ (user.first_name or user.username)[0] | upper }}
+    <div id="avatarClickTarget" title="Click to change photo"
+         style="position:relative; width:72px; height:72px; border-radius:50%; cursor:pointer; flex-shrink:0;">
+      <div id="avatarDisplay" style="width:72px; height:72px; border-radius:50%; overflow:hidden; border:1px solid var(--border);">
+        {% if user.avatar_updated_at %}
+          <img id="avatarImg" src="{{ url_for('avatar', user_id=user.id) }}?v={{ user.avatar_updated_at }}"
+               alt="Avatar" style="width:100%; height:100%; object-fit:cover; display:block;">
+        {% else %}
+          <div id="avatarPlaceholder" style="width:100%; height:100%; background:var(--muted-fill); display:flex; align-items:center; justify-content:center;">
+            <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--text-muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="4"/>
+              <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+            </svg>
+          </div>
+        {% endif %}
       </div>
-    {% endif %}
-    <div style="display:flex; flex-direction:column; gap:8px;">
-      <form method="post" action="{{ url_for('profile_avatar') }}" enctype="multipart/form-data" style="display:flex; gap:8px; align-items:center;">
-        <input type="file" name="avatar" accept="image/*" style="width:auto; margin-bottom:0;">
-        <button type="submit" class="iconbtn small">Upload</button>
-      </form>
+      <div id="avatarSpinner" style="position:absolute; inset:0; border-radius:50%; background:rgba(0,0,0,0.55); display:none; align-items:center; justify-content:center;">
+        <span class="spin-icon spinning" style="color:#fff; font-size:18px;">⟳</span>
+      </div>
+      <div style="position:absolute; inset:0; border-radius:50%; background:rgba(0,0,0,0); transition:background .15s;"
+           onmouseover="this.style.background='rgba(0,0,0,0.35)'" onmouseout="this.style.background='rgba(0,0,0,0)'"></div>
+      <input type="file" id="avatarFileInput" accept="image/*" style="display:none;">
+    </div>
+    <div style="display:flex; flex-direction:column; gap:4px;">
+      <span style="font-size:12px; color:var(--text-muted);">Click the photo to upload a new one</span>
       {% if user.avatar_updated_at %}
-      <form method="post" action="{{ url_for('profile_avatar_delete') }}">
-        <button type="submit" class="iconbtn small danger">Remove Avatar</button>
-      </form>
+      <button type="button" class="iconbtn small danger" id="removeAvatarBtn" style="width:fit-content;">Remove Avatar</button>
       {% endif %}
-      {% if avatar_error %}<span style="color:var(--critical); font-size:12px;">{{ avatar_error }}</span>{% endif %}
+      <span id="avatarStatus" style="font-size:12px;"></span>
     </div>
   </div>
 
@@ -50,7 +58,7 @@
     <div class="field"><label>Member Since</label><div>{{ user.created_at[:10] }}</div></div>
   </div>
 
-  <form method="post" action="{{ url_for('profile_account') }}" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+  <form id="accountForm" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
     <div class="form-grid thirds">
       <div class="field">
         <label>Country</label>
@@ -67,13 +75,10 @@
     </div>
     <div class="form-actions">
       <button type="submit" class="btn-primary">Save Account Details</button>
-      {% if account_error %}<span style="color:var(--critical); font-size:12px;">{{ account_error }}</span>{% endif %}
-      {% if account_success %}<span style="color:var(--good); font-size:12px;">{{ account_success }}</span>{% endif %}
+      <span id="accountStatus" style="font-size:12px;"></span>
     </div>
   </form>
-  {% if country_name %}
-  <div style="margin-top:8px; font-size:12.5px; color:var(--text-secondary);">Current country on file: {{ country_flag }} {{ country_name }}</div>
-  {% endif %}
+  <div id="countryOnFile" style="margin-top:8px; font-size:12.5px; color:var(--text-secondary); {{ '' if country_name else 'display:none;' }}">Current country on file: <span id="countryOnFileText">{{ country_flag }} {{ country_name }}</span></div>
 </div>
 
 <div class="panel">
@@ -138,6 +143,109 @@
     [['null', 'Normal'], ['high', 'High']],
     DC.getStoredContrast() || 'null',
     (v) => DC.setContrast(v));
+
+  // ---------- avatar: click the photo itself, no separate file/upload controls ----------
+
+  const AVATAR_URL = "{{ url_for('avatar', user_id=user.id) }}";
+  const PLACEHOLDER_HTML = `<div style="width:100%; height:100%; background:var(--muted-fill); display:flex; align-items:center; justify-content:center;">
+    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--text-muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="8" r="4"/>
+      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+    </svg>
+  </div>`;
+
+  const avatarClickTarget = document.getElementById('avatarClickTarget');
+  const avatarFileInput = document.getElementById('avatarFileInput');
+  const avatarDisplay = document.getElementById('avatarDisplay');
+  const avatarSpinner = document.getElementById('avatarSpinner');
+  const avatarStatus = document.getElementById('avatarStatus');
+  let removeAvatarBtn = document.getElementById('removeAvatarBtn');
+
+  function setAvatarBusy(busy) {
+    avatarSpinner.style.display = busy ? 'flex' : 'none';
+    avatarClickTarget.style.pointerEvents = busy ? 'none' : '';
+  }
+
+  function attachRemoveHandler(btn) {
+    btn.addEventListener('click', async () => {
+      setAvatarBusy(true);
+      avatarStatus.textContent = '';
+      try {
+        await DC.apiSend('POST', '/profile/avatar/delete', {});
+        avatarDisplay.innerHTML = PLACEHOLDER_HTML;
+        btn.remove();
+        removeAvatarBtn = null;
+      } catch (e) {
+        avatarStatus.style.color = 'var(--critical)';
+        avatarStatus.textContent = e.message;
+      } finally {
+        setAvatarBusy(false);
+      }
+    });
+  }
+  if (removeAvatarBtn) attachRemoveHandler(removeAvatarBtn);
+
+  avatarClickTarget.addEventListener('click', () => avatarFileInput.click());
+
+  avatarFileInput.addEventListener('change', async () => {
+    const file = avatarFileInput.files[0];
+    if (!file) return;
+    setAvatarBusy(true);
+    avatarStatus.textContent = '';
+    const fd = new FormData();
+    fd.append('avatar', file);
+    try {
+      const r = await fetch('/profile/avatar', { method: 'POST', body: fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Upload failed');
+      avatarDisplay.innerHTML = `<img id="avatarImg" src="${AVATAR_URL}?v=${data.avatar_updated_at}" alt="Avatar" style="width:100%; height:100%; object-fit:cover; display:block;">`;
+      if (!removeAvatarBtn) {
+        removeAvatarBtn = document.createElement('button');
+        removeAvatarBtn.type = 'button';
+        removeAvatarBtn.id = 'removeAvatarBtn';
+        removeAvatarBtn.className = 'iconbtn small danger';
+        removeAvatarBtn.style.width = 'fit-content';
+        removeAvatarBtn.textContent = 'Remove Avatar';
+        attachRemoveHandler(removeAvatarBtn);
+        avatarStatus.insertAdjacentElement('beforebegin', removeAvatarBtn);
+      }
+    } catch (e) {
+      avatarStatus.style.color = 'var(--critical)';
+      avatarStatus.textContent = e.message;
+    } finally {
+      setAvatarBusy(false);
+      avatarFileInput.value = '';
+    }
+  });
+
+  // ---------- account details: save in place, no page reload ----------
+
+  const accountForm = document.getElementById('accountForm');
+  const accountStatus = document.getElementById('accountStatus');
+  const countryOnFile = document.getElementById('countryOnFile');
+  const countryOnFileText = document.getElementById('countryOnFileText');
+
+  accountForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(accountForm);
+    const payload = Object.fromEntries(fd.entries());
+    accountStatus.textContent = '';
+    try {
+      const data = await DC.apiSend('POST', '/profile/account', payload);
+      accountStatus.style.color = 'var(--good)';
+      accountStatus.textContent = 'Saved.';
+      setTimeout(() => { accountStatus.textContent = ''; }, 2200);
+      if (data.country_name) {
+        countryOnFileText.textContent = `${data.country_flag} ${data.country_name}`;
+        countryOnFile.style.display = '';
+      } else {
+        countryOnFile.style.display = 'none';
+      }
+    } catch (e) {
+      accountStatus.style.color = 'var(--critical)';
+      accountStatus.textContent = e.message;
+    }
+  });
 })();
 </script>
 {% endblock %}

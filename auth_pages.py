@@ -71,13 +71,17 @@ LOGIN_PAGE = """<form method="post">
 <div class="links"><a href="/forgot-password">Forgot password?</a> &middot; <a href="/signup">Sign up</a></div>"""
 
 
-SIGNUP_PAGE = """<form method="post">
+SIGNUP_PAGE = """<form method="post" id="signupForm" novalidate>
   <h1>Create your account</h1>
-  {error}
-  <input type="text" name="first_name" placeholder="First name" value="{first_name}" autofocus>
-  <input type="text" name="last_name" placeholder="Last name" value="{last_name}">
-  <input type="text" name="username" placeholder="Username" value="{username}" autocapitalize="off">
-  <input type="email" name="email" placeholder="Email" value="{email}" autocapitalize="off">
+  <div id="signupTopError">{error}</div>
+  <input type="text" name="first_name" placeholder="First name" value="{first_name}" autofocus required>
+  <div class="error" id="err_first_name" style="display:none;">First name is required.</div>
+  <input type="text" name="last_name" placeholder="Last name" value="{last_name}" required>
+  <div class="error" id="err_last_name" style="display:none;">Last name is required.</div>
+  <input type="text" name="username" placeholder="Username" value="{username}" autocapitalize="off" required>
+  <div class="error" id="err_username" style="display:none;">Username is required.</div>
+  <input type="email" name="email" placeholder="Email" value="{email}" autocapitalize="off" required>
+  <div class="error" id="err_email" style="display:none;">Enter a valid email address.</div>
   <select name="country" id="signupCountry">{country_options}</select>
   <div id="signupAddressFields" style="display:none;">
     <input type="text" name="address_line1" placeholder="Street address" value="{address_line1}">
@@ -85,9 +89,11 @@ SIGNUP_PAGE = """<form method="post">
     <input type="text" name="address_postal_code" placeholder="Postal code" value="{address_postal_code}">
   </div>
   <input type="text" name="phone" placeholder="Phone number (optional)" value="{phone}">
-  <input type="password" name="password" placeholder="Password">
-  <input type="password" name="confirm_password" placeholder="Confirm password">
-  <button type="submit">Sign Up</button>
+  <input type="password" name="password" placeholder="Password" required minlength="8">
+  <div class="error" id="err_password" style="display:none;">Password must be at least 8 characters.</div>
+  <input type="password" name="confirm_password" placeholder="Confirm password" required>
+  <div class="error" id="err_confirm_password" style="display:none;">Passwords don't match.</div>
+  <button type="submit" id="signupSubmit">Sign Up</button>
 </form>
 <div class="links"><a href="/login">Already have an account? Log in</a></div>
 <script>
@@ -97,6 +103,94 @@ SIGNUP_PAGE = """<form method="post">
   function sync() {{ addr.style.display = sel.value ? 'block' : 'none'; }}
   sel.addEventListener('change', sync);
   sync();
+
+  var form = document.getElementById('signupForm');
+  var topError = document.getElementById('signupTopError');
+  // Fields with an inline error slot right below them (in DOM order) --
+  // "which field does this error belong under" is a lookup, not a guess,
+  // for every check this page can actually attribute to one field.
+  var errEls = {{
+    first_name: document.getElementById('err_first_name'),
+    last_name: document.getElementById('err_last_name'),
+    username: document.getElementById('err_username'),
+    email: document.getElementById('err_email'),
+    password: document.getElementById('err_password'),
+    confirm_password: document.getElementById('err_confirm_password'),
+  }};
+  function clearErrors() {{
+    topError.innerHTML = '';
+    Object.keys(errEls).forEach(function(k) {{ errEls[k].style.display = 'none'; }});
+  }}
+  function showError(field, text) {{
+    if (errEls[field]) {{
+      if (text) errEls[field].textContent = text;
+      errEls[field].style.display = 'block';
+    }} else {{
+      topError.innerHTML = '<div class="error">' + text + '</div>';
+    }}
+  }}
+
+  var EMAIL_RE = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;
+
+  // Real-time feedback as you type, no round trip -- password match and
+  // email shape are the two checks genuinely instant to do client-side.
+  function checkMatch() {{
+    var mismatch = form.confirm_password.value && form.password.value !== form.confirm_password.value;
+    errEls.confirm_password.style.display = mismatch ? 'block' : 'none';
+  }}
+  form.password.addEventListener('input', checkMatch);
+  form.confirm_password.addEventListener('input', checkMatch);
+  form.email.addEventListener('input', function() {{
+    errEls.email.style.display = (form.email.value && !EMAIL_RE.test(form.email.value)) ? 'block' : 'none';
+  }});
+
+  function validate() {{
+    clearErrors();
+    var ok = true;
+    ['first_name', 'last_name', 'username', 'email'].forEach(function(name) {{
+      if (!form[name].value.trim()) {{ showError(name); ok = false; }}
+    }});
+    if (form.email.value.trim() && !EMAIL_RE.test(form.email.value.trim())) {{ showError('email'); ok = false; }}
+    if (!form.password.value) {{ showError('password', 'Password is required.'); ok = false; }}
+    else if (form.password.value.length < 8) {{ showError('password'); ok = false; }}
+    if (!form.confirm_password.value) {{ showError('confirm_password', 'Confirm your password.'); ok = false; }}
+    else if (form.password.value !== form.confirm_password.value) {{ showError('confirm_password'); ok = false; }}
+    return ok;
+  }}
+
+  form.addEventListener('submit', function(e) {{
+    e.preventDefault();
+    if (!validate()) return;
+    var submitBtn = document.getElementById('signupSubmit');
+    submitBtn.disabled = true;
+    var fd = new FormData(form);
+    var payload = Object.fromEntries(fd.entries());
+    fetch('/signup', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify(payload),
+    }}).then(function(r) {{ return r.json().then(function(data) {{ return {{ ok: r.ok, data: data }}; }}); }})
+      .then(function(res) {{
+        if (!res.ok) {{
+          clearErrors();
+          // Route the server's error under the field it's actually about
+          // when we can tell, instead of always dumping it at the top.
+          var msg = res.data.error || 'Something went wrong -- try again.';
+          if (/username/i.test(msg)) showError('username', msg);
+          else if (/email/i.test(msg)) showError('email', msg);
+          else if (/password/i.test(msg)) showError('confirm_password', msg);
+          else showError(null, msg);
+          submitBtn.disabled = false;
+          return;
+        }}
+        window.location.href = res.data.redirect;
+      }})
+      .catch(function() {{
+        clearErrors();
+        showError(null, 'Something went wrong -- try again.');
+        submitBtn.disabled = false;
+      }});
+  }});
 }})();
 </script>"""
 

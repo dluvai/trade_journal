@@ -513,6 +513,7 @@ def set_avatar(user_id, image_bytes, content_type):
         "UPDATE users SET avatar_image=?, avatar_content_type=?, avatar_updated_at=? WHERE id=?",
         (image_bytes, content_type, now, user_id),
     )
+    return now
 
 
 def clear_avatar(user_id):

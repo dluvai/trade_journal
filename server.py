@@ -153,10 +153,12 @@ def _validate_profile_fields(fields):
 def signup():
     fields = {k: "" for k in REQUIRED_SIGNUP_FIELDS + OPTIONAL_SIGNUP_FIELDS}
     error = ""
+    is_json = request.method == "POST" and request.is_json
     if request.method == "POST":
-        fields = {k: (request.form.get(k) or "").strip() for k in fields}
-        password = request.form.get("password") or ""
-        confirm_password = request.form.get("confirm_password") or ""
+        source = request.get_json(silent=True) or {} if is_json else request.form
+        fields = {k: (source.get(k) or "").strip() for k in fields}
+        password = source.get("password") or ""
+        confirm_password = source.get("confirm_password") or ""
 
         if not all(fields[k] for k in REQUIRED_SIGNUP_FIELDS) or not password or not confirm_password:
             error = "First name, last name, username, email, and password are required."
@@ -185,7 +187,12 @@ def signup():
             db.set_verification_code(user_id, auth.hash_code(code), auth.expiry_timestamp())
             email_sender.send_verification_code(fields["email"], code)
             session["pending_verification_user_id"] = user_id
+            if is_json:
+                return jsonify({"ok": True, "redirect": url_for("verify_email")})
             return redirect(url_for("verify_email"))
+
+        if is_json:
+            return jsonify({"error": error}), 400
 
     body = auth_pages.SIGNUP_PAGE.format(
         error=f'<div class="error">{error}</div>' if error else "",
@@ -346,13 +353,19 @@ def profile():
 @app.post("/profile/account")
 def profile_account():
     user_id = session["user_id"]
-    fields = {k: (request.form.get(k) or "").strip() or None for k in
+    body = request.get_json(force=True) or {}
+    fields = {k: (body.get(k) or "").strip() or None for k in
               ("country", "address_line1", "address_city", "address_postal_code", "phone")}
     error = _validate_profile_fields({k: v or "" for k, v in fields.items()})
     if error:
-        return _render_profile(account_error=error, account_success="", avatar_error="")
+        return jsonify({"error": error}), 400
     db.update_profile_fields(user_id, fields)
-    return _render_profile(account_error="", account_success="Account updated.", avatar_error="")
+    country = fields["country"]
+    return jsonify({
+        "ok": True,
+        "country_name": countries.country_name(country) if country else None,
+        "country_flag": countries.flag_emoji(country) if country else "",
+    })
 
 
 @app.post("/profile/avatar")
@@ -360,17 +373,17 @@ def profile_avatar():
     user_id = session["user_id"]
     file = request.files.get("avatar")
     if not file or not file.filename:
-        return _render_profile(account_error="", account_success="", avatar_error="Choose an image file.")
+        return jsonify({"error": "Choose an image file."}), 400
     data = file.read()
     if len(data) > AVATAR_MAX_BYTES:
-        return _render_profile(account_error="", account_success="", avatar_error="Image must be 5MB or smaller.")
+        return jsonify({"error": "Image must be 5MB or smaller."}), 400
 
     try:
         img = Image.open(io.BytesIO(data))
         img.verify()
         img = Image.open(io.BytesIO(data))  # verify() invalidates the object -- reopen to actually use it
     except Exception:
-        return _render_profile(account_error="", account_success="", avatar_error="That doesn't look like a valid image.")
+        return jsonify({"error": "That doesn't look like a valid image."}), 400
 
     if img.width > AVATAR_MAX_DIMENSION[0] or img.height > AVATAR_MAX_DIMENSION[1]:
         img.thumbnail(AVATAR_MAX_DIMENSION, Image.LANCZOS)
@@ -387,14 +400,14 @@ def profile_avatar():
         img = img.convert("RGB")
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
-    db.set_avatar(user_id, buf.getvalue(), "image/jpeg")
-    return _render_profile(account_error="", account_success="", avatar_error="")
+    avatar_updated_at = db.set_avatar(user_id, buf.getvalue(), "image/jpeg")
+    return jsonify({"ok": True, "avatar_updated_at": avatar_updated_at})
 
 
 @app.post("/profile/avatar/delete")
 def profile_avatar_delete():
     db.clear_avatar(session["user_id"])
-    return _render_profile(account_error="", account_success="", avatar_error="")
+    return jsonify({"ok": True})
 
 
 @app.get("/avatar/<int:user_id>")
