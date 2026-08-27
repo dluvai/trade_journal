@@ -26,6 +26,8 @@ and why.
 Run standalone to see exactly what it would fetch, and from where:
     python macro_sync.py
 """
+import concurrent.futures
+
 import central_bank_rates
 import national_stats_sync
 import fred_sync
@@ -70,14 +72,24 @@ def sync(currencies=None, dry_run=False):
     currencies = currencies or list(db.MAJOR_CURRENCIES)
     existing_by_ccy = {r["currency"]: r for r in db.list_macro()}
 
-    # Both providers are queried in dry-run mode regardless of routing --
-    # fred_sync/oecd_sync each already skip any currency missing from their
-    # own SERIES/OECD_SERIES dict, so there's no wasted work in asking both
-    # and then picking, per (currency, metric), which report to keep.
-    fred_report = fred_sync.sync(currencies=currencies, dry_run=True)
-    oecd_report = oecd_sync.sync(currencies=currencies, dry_run=True)
-    national_stats_report = national_stats_sync.sync(currencies=currencies, dry_run=True)
-    rates_report = central_bank_rates.sync(currencies=currencies, dry_run=True)
+    # All four providers are queried in dry-run mode regardless of routing
+    # -- each already skips any currency missing from its own coverage, so
+    # there's no wasted work in asking all four and then picking, per
+    # (currency, metric), which report to keep. Each provider already
+    # parallelizes its own requests internally (a thread pool per
+    # provider), but the four providers themselves were still being asked
+    # one after another -- with four independent external APIs to wait on,
+    # running them concurrently too cuts total wall time to roughly the
+    # slowest single provider instead of the sum of all four.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        fred_future = pool.submit(fred_sync.sync, currencies=currencies, dry_run=True)
+        oecd_future = pool.submit(oecd_sync.sync, currencies=currencies, dry_run=True)
+        national_stats_future = pool.submit(national_stats_sync.sync, currencies=currencies, dry_run=True)
+        rates_future = pool.submit(central_bank_rates.sync, currencies=currencies, dry_run=True)
+        fred_report = fred_future.result()
+        oecd_report = oecd_future.result()
+        national_stats_report = national_stats_future.result()
+        rates_report = rates_future.result()
 
     report = {ccy: {} for ccy in currencies}
     fetched_by_ccy = {ccy: {} for ccy in currencies}

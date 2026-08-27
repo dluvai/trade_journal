@@ -64,6 +64,13 @@ Covers two metric families:
     - GBP: ONS's timeseries API. Series GB7S is Output PPI (domestic,
       manufactured products) as an index level -- YoY computed the same
       way as CAD's. ~1 month lag.
+    - JPY: BOJ's own Time-Series API. Series PRCG20_2200000000 under DB
+      PR01 is "[Producer Price Index] All commodities" -- an index
+      level, YoY computed the same way. ~1 month lag.
+    - CHF: SNB's own data portal. Cube plproimpr, D0=P ("Index of
+      producer prices" -- domestic only, not the blended import-price
+      variant also in this cube), D1=VVP is already published by SNB as
+      a YoY % figure -- no computation needed. ~1 month lag.
 
   retail_sales_yoy for GBP, CAD, and AUD -- same concept as USD's
   existing FRED-sourced figure (RSAFS), just from each country's own
@@ -112,15 +119,28 @@ Covers two metric families:
       ANA_EXP dataflow (expenditure GDP, current prices, SA) divided
       directly -- unlike StatCan's SAAR convention, ABS doesn't annualize
       either series, so no x4 adjustment here. ~1 quarter lag.
+    - CHF: SNB's own data portal, two cubes: bopoverq (D0=S0, "Current
+      account, Net") and gdpap (D0=WMF/D1=BBIP, nominal GDP). Both plain
+      quarterly levels like ABS's, divided directly -- checked the
+      resulting ~7% ratio against Switzerland's well-documented large,
+      persistent current-account surplus before trusting it, since a
+      number this different in shape from CAD/GBP/AUD's small deficits
+      was worth a sanity check. ~1 quarter lag.
 
 Run standalone to see exactly what it would fetch:
     python national_stats_sync.py
 """
+import concurrent.futures
 import json
 import re
+import ssl
 import urllib.request
 
+import certifi
+
 import db
+
+_SNB_SSL_CTX = ssl.create_default_context(cafile=certifi.where())  # SNB's TLS chain isn't in every OS's default trust store
 
 STATCAN_VECTOR_ID = 2062811  # Canada; Employment; Total; 15 years and over; SA
 STATCAN_PPI_VECTOR_ID = 1230995983  # Canada; Total, Industrial product price index (IPPI)
@@ -137,6 +157,11 @@ ONS_ECYX_URL = "https://www.ons.gov.uk/economy/grossdomesticproductgdp/timeserie
 ONS_GB7S_URL = "https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/gb7s/ppi/data?format=json"
 ONS_J5EB_URL = "https://www.ons.gov.uk/businessindustryandtrade/retailindustry/timeseries/j5eb/drsi/data?format=json"
 ONS_AA6H_URL = "https://www.ons.gov.uk/economy/nationalaccounts/balanceofpayments/timeseries/aa6h/ukea/data?format=json"
+BOJ_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"  # BOJ's API 403s a bare curl/urllib UA
+SNB_UA = BOJ_UA  # SNB's API also 403s a bare curl/urllib UA (same discovery as central_bank_rates.py's CHF fetch)
+SNB_PPI_URL = "https://data.snb.ch/api/cube/plproimpr/data/csv/en"
+SNB_BOP_URL = "https://data.snb.ch/api/cube/bopoverq/data/csv/en"
+SNB_GDP_URL = "https://data.snb.ch/api/cube/gdpap/data/csv/en"
 
 METRIC_NOTES = {
     ("GBP", "employment_change"): "3-month change vs. the prior 3 months (ONS's own headline convention), not a literal month-over-month diff -- the underlying LFS survey is too noisy for that.",
@@ -237,6 +262,76 @@ def _fetch_gbp_gdp_mom():
         return None, None
     latest = months[-1]
     return latest["date"], round(float(latest["value"]), 2)
+
+
+def _boj_series_yoy(db_name, series_code, months_back=15):
+    from datetime import date, timedelta
+    start = (date.today() - timedelta(days=30 * months_back)).strftime("%Y%m")
+    url = f"https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=json&lang=en&db={db_name}&code={series_code}&startDate={start}"
+    req = urllib.request.Request(url, headers={"User-Agent": BOJ_UA})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    series = data["RESULTSET"][0]["VALUES"]
+    rows = [(d, v) for d, v in zip(series["SURVEY_DATES"], series["VALUES"]) if v is not None]
+    if len(rows) < 13:
+        return None, None
+    year_ago, latest = rows[-13], rows[-1]
+    date_str = str(latest[0])
+    as_of = f"{date_str[:4]}-{date_str[4:]}"
+    return as_of, round((latest[1] / year_ago[1] - 1) * 100, 2)
+
+
+def _fetch_jpy_ppi():
+    return _boj_series_yoy("PR01", "PRCG20_2200000000")
+
+
+def _snb_csv_rows(url, d0=None, d1=None):
+    """Parse an SNB cube CSV export -- rows are "Date;D0[;D1];Value", with
+    the D1 column only present for cubes that actually have a second
+    dimension (checked per-cube via .../dimensions/en, not assumed)."""
+    req = urllib.request.Request(url, headers={"User-Agent": SNB_UA})
+    with urllib.request.urlopen(req, timeout=20, context=_SNB_SSL_CTX) as resp:
+        text = resp.read().decode("utf-8-sig", errors="replace")
+    rows = []
+    for line in text.splitlines():
+        parts = [p.strip('"') for p in line.split(";")]
+        if d1 is not None:
+            if len(parts) != 4 or parts[1] != d0 or parts[2] != d1 or not parts[3]:
+                continue
+            value = parts[3]
+        else:
+            if len(parts) != 3 or parts[1] != d0 or not parts[2]:
+                continue
+            value = parts[2]
+        try:
+            rows.append((parts[0], float(value)))
+        except ValueError:
+            continue
+    rows.sort(key=lambda r: r[0])
+    return rows
+
+
+def _fetch_chf_ppi():
+    rows = _snb_csv_rows(SNB_PPI_URL, d0="P", d1="VVP")
+    if not rows:
+        return None, None
+    period, value = rows[-1]
+    return period, round(value, 2)
+
+
+def _fetch_chf_current_account_pct_gdp():
+    ca_rows = _snb_csv_rows(SNB_BOP_URL, d0="S0")
+    gdp_rows = _snb_csv_rows(SNB_GDP_URL, d0="WMF", d1="BBIP")
+    if not ca_rows or not gdp_rows:
+        return None, None
+    gdp_by_period = dict(gdp_rows)
+    period, ca_value = ca_rows[-1]
+    gdp_value = gdp_by_period.get(period)
+    if gdp_value is None:
+        return None, None
+    # Both are plain quarterly levels (SNB doesn't annualize either
+    # series) -- divide directly, no annualizing needed.
+    return period, round(ca_value / gdp_value * 100, 2)
 
 
 def _fetch_cad_ppi():
@@ -413,22 +508,24 @@ def _fetch_aud_ppi():
 FETCHERS = {
     "employment_change": {"CAD": _fetch_cad_employment, "AUD": _fetch_aud_employment, "GBP": _fetch_gbp_employment},
     "gdp_mom": {"GBP": _fetch_gbp_gdp_mom},
-    "ppi_yoy": {"CAD": _fetch_cad_ppi, "AUD": _fetch_aud_ppi, "GBP": _fetch_gbp_ppi},
+    "ppi_yoy": {"CAD": _fetch_cad_ppi, "AUD": _fetch_aud_ppi, "GBP": _fetch_gbp_ppi, "JPY": _fetch_jpy_ppi, "CHF": _fetch_chf_ppi},
     "retail_sales_yoy": {"CAD": _fetch_cad_retail, "GBP": _fetch_gbp_retail, "AUD": _fetch_aud_retail},
     "current_account_pct_gdp": {
         "CAD": _fetch_cad_current_account_pct_gdp,
         "GBP": _fetch_gbp_current_account_pct_gdp,
         "AUD": _fetch_aud_current_account_pct_gdp,
+        "CHF": _fetch_chf_current_account_pct_gdp,
     },
 }
 
 
-def _fetch_one(metric, ccy):
+def _fetch_one(job):
+    metric, ccy = job
     try:
         as_of, value = FETCHERS[metric][ccy]()
     except Exception as e:
-        return None, None, str(e)
-    return as_of, value, None
+        return metric, ccy, None, None, str(e)
+    return metric, ccy, as_of, value, None
 
 
 def sync(currencies=None, dry_run=False):
@@ -442,17 +539,22 @@ def sync(currencies=None, dry_run=False):
     report = {ccy: {} for ccy in currencies}
     fetched_by_ccy = {ccy: {} for ccy in currencies}
 
-    for metric, fetchers in FETCHERS.items():
-        for ccy in currencies:
-            if ccy not in fetchers:
-                continue
-            as_of, value, error = _fetch_one(metric, ccy)
-            if error is not None:
-                report[ccy][metric] = {"error": error}
-                continue
-            report[ccy][metric] = {"as_of": as_of, "value": value, "note": METRIC_NOTES.get((ccy, metric))}
-            if value is not None:
-                fetched_by_ccy[ccy][metric] = value
+    # Every job hits a different institution's endpoint (StatCan, ABS,
+    # ONS, BOJ, SNB) -- pure independent network waits, so a thread pool
+    # gets them all back in roughly the time of the single slowest one
+    # instead of the sum of ~15+ sequential requests (same reasoning as
+    # fred_sync.sync()).
+    jobs = [(metric, ccy) for metric, fetchers in FETCHERS.items() for ccy in currencies if ccy in fetchers]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs) or 1) as pool:
+        results = list(pool.map(_fetch_one, jobs))
+
+    for metric, ccy, as_of, value, error in results:
+        if error is not None:
+            report[ccy][metric] = {"error": error}
+            continue
+        report[ccy][metric] = {"as_of": as_of, "value": value, "note": METRIC_NOTES.get((ccy, metric))}
+        if value is not None:
+            fetched_by_ccy[ccy][metric] = value
 
     if not dry_run:
         for ccy in currencies:

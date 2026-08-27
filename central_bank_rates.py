@@ -43,6 +43,7 @@ not a proxy.
 Run standalone to see exactly what it would fetch:
     python central_bank_rates.py
 """
+import concurrent.futures
 import io
 import json
 import ssl
@@ -176,8 +177,14 @@ def sync(currencies=None, dry_run=False):
     existing_by_ccy = {r["currency"]: r for r in db.list_macro()}
     report = {}
 
-    for ccy in currencies:
-        _, as_of, value, error = _fetch_one(ccy)
+    # Six independent central-bank requests -- pure network waits, so a
+    # thread pool gets them all back in roughly the time of the single
+    # slowest one instead of the sum of all six (same reasoning as
+    # fred_sync.sync()).
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(currencies) or 1) as pool:
+        results = list(pool.map(_fetch_one, currencies))
+
+    for ccy, as_of, value, error in results:
         if error is not None:
             report[ccy] = {"metric": "interest_rate", "error": error}
             continue

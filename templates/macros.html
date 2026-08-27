@@ -126,7 +126,7 @@ const METRIC_GROUPS = [
       note: 'Strips out volatile food and energy prices -- the central bank\'s preferred inflation gauge for policy decisions, since it reflects underlying price pressure rather than one-off swings.' },
     { key: 'core_ppi_yoy', label: 'Core PPI YoY', suffix: '%', step: '0.01', applies: ['USD'],
       note: 'Pipeline inflation at the producer level -- rising producer costs often get passed through to consumer prices later, making this a leading indicator for future CPI.' },
-    { key: 'ppi_yoy', label: 'PPI YoY', suffix: '%', step: '0.01', applies: ['GBP', 'CAD', 'AUD'],
+    { key: 'ppi_yoy', label: 'PPI YoY', suffix: '%', step: '0.01', applies: ['GBP', 'CAD', 'AUD', 'JPY', 'CHF'],
       note: 'The headline producer price index -- unlike Core PPI (a US-specific ex-food-and-energy construct), this is the all-items gauge most other countries actually publish; a leading indicator for future CPI.' },
     { key: 'core_pce_yoy', label: 'Core PCE YoY', suffix: '%', step: '0.01', applies: ['USD'],
       note: 'The Fed\'s own preferred inflation gauge, distinct from CPI -- weighted differently and adjusted for consumers substituting cheaper goods, which the Fed considers a more accurate read on underlying inflation.' },
@@ -179,14 +179,12 @@ function metricRowHtml(row, meta) {
   const v = row[meta.key];
   const prev = row['prev_' + meta.key];
   const arrow = (v == null || prev == null || v === prev) ? '' : (v > prev ? '▲' : '▼');
-  const prevText = prev == null ? 'no prior value' : `prev ${meta.prefix || ''}${prev}${meta.suffix}`;
   return `<div class="metric-row"${meta.note ? ` title="${meta.note}"` : ''}>
       <div class="metric-row-head">
         <span class="metric-card-label">${meta.label}</span>
         ${arrow ? `<span class="metric-arrow">${arrow}</span>` : ''}
       </div>
       <input type="number" step="${meta.step}" class="macro-input" data-field="${meta.key}" value="${v == null ? '' : v}" placeholder="—">
-      <div class="metric-card-prev">${prevText}</div>
       ${nextDateFor(meta.key) ? `<div class="metric-card-next">Next ${meta.key === 'interest_rate' ? 'decision' : 'release'} ${nextDateFor(meta.key)}</div>` : ''}
     </div>`;
 }
@@ -209,21 +207,20 @@ function categoryCardHtml(row, group, ccy) {
     </div>`;
 }
 
-// One-line summary of which watched metrics moved since their last reading,
-// for a quick scan before diving into the individual cards below. Scoped to
-// policy rate, inflation and unemployment on purpose -- these are the
-// metrics that actually move FX bias day to day; GDP/PMI/trade balance move
-// too slowly, and retail sales/current account are noisy, to be worth a
+// Fixed, always-shown glance-level readout -- the four metrics that
+// actually move FX bias day to day; GDP/PMI/trade balance move too
+// slowly, and retail sales/current account are noisy, to be worth a
 // glance-level signal.
-const QUICK_SIGNAL_KEYS = ['interest_rate', 'cpi_yoy', 'cpi_mom', 'core_cpi_yoy', 'core_ppi_yoy', 'core_pce_yoy', 'core_pce_mom', 'unemployment'];
+const QUICK_SIGNAL_KEYS = ['interest_rate', 'cpi_yoy', 'core_pce_yoy', 'unemployment'];
 
 function quickSignalsHtml(row) {
-  const parts = METRIC_META.filter(meta => QUICK_SIGNAL_KEYS.includes(meta.key)).map(meta => {
-    const v = row[meta.key], prev = row['prev_' + meta.key];
-    if (v == null || prev == null || v === prev) return null;
-    const arrow = v > prev ? '▲' : '▼';
+  const parts = QUICK_SIGNAL_KEYS.map(key => METRIC_META.find(m => m.key === key)).filter(Boolean).map(meta => {
+    const v = row[meta.key];
+    if (v == null) return null;
+    const prev = row['prev_' + meta.key];
+    const arrow = (prev == null || v === prev) ? '' : (v > prev ? '▲' : '▼');
     const cls = v > prev ? 'good' : 'critical';
-    return `<span class="signal-item"><span class="signal-label">${meta.label}</span><span class="metric-arrow ${cls}">${arrow}</span> ${meta.prefix || ''}${v}${meta.suffix} <span class="signal-vs">vs ${meta.prefix || ''}${prev}${meta.suffix}</span></span>`;
+    return `<span class="signal-item"><span class="signal-label">${meta.label}</span>${arrow ? `<span class="metric-arrow ${cls}">${arrow}</span>` : ''} ${meta.prefix || ''}${v}${meta.suffix}</span>`;
   }).filter(Boolean);
   if (!parts.length) return '';
   return `<div class="quick-signals"><span class="signal-eyebrow">Quick signals</span>${parts.join('')}</div>`;
