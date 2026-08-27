@@ -134,7 +134,14 @@ const METRIC_META = METRIC_GROUPS.flatMap(g => g.metrics);
 let RELEASE_CALENDAR = {};
 // { currency: 'YYYY-MM-DD' or null } next policy-rate decision -- see rate_calendar.py.
 let RATE_CALENDAR = {};
-let selectedCcy = 'USD';
+// Persisted across reloads/navigation so switching currencies then hitting
+// refresh (or coming back later) doesn't silently dump you back on USD.
+let selectedCcy = (function() {
+  try {
+    const stored = localStorage.getItem('sf-macro-ccy');
+    return CCY_ORDER.includes(stored) ? stored : 'USD';
+  } catch (e) { return 'USD'; }
+})();
 let LATEST_MACRO_ROWS = [];
 // mirrors fundamentals.py SCORED_METRICS -- keep in sync if that changes
 const SCORED_METRICS = [
@@ -264,6 +271,7 @@ function renderCcySwitcher() {
     sel.innerHTML = CCY_ORDER.map(c => `<option value="${c}">${c}</option>`).join('');
     sel.addEventListener('change', () => {
       selectedCcy = sel.value;
+      try { localStorage.setItem('sf-macro-ccy', selectedCcy); } catch (e) {}
       onCcyChange();
     });
   }
