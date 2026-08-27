@@ -25,7 +25,7 @@
     <h2 style="margin:0;">Macro Workspace</h2>
     <div class="form-actions">
       <button class="btn-primary" id="saveMacroBtn">Save changes</button>
-      <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP and CPI for every currency, unemployment for USD/GBP/JPY/AUD/CAD, and trade balance for every currency except EUR. EUR also gets core CPI YoY. USD only gets core PPI/PCE (plus PCE MoM), nonfarm payrolls change, retail sales and current account -- no fresh free source found for those on other currencies. PMI always stays manual.">
+      <button class="iconbtn" id="syncFredBtn" title="Pulls rate, GDP, CPI and unemployment for every currency (from FRED or OECD, whichever is fresher), trade balance for every currency except EUR, and employment change for USD/CAD/AUD/GBP -- the three markets where a jobs report actually moves the currency. EUR also gets core CPI YoY. USD only gets core PPI/PCE (plus PCE MoM), retail sales and current account -- no fresh free source found for those on other currencies. PMI always stays manual.">
         <span class="spin-icon" id="syncSpinIcon">⟳</span> Sync
       </button>
       <span id="macroSaved" class="save-flash"></span>
@@ -86,8 +86,8 @@ const METRIC_GROUPS = [
   { title: 'Labor', metrics: [
     { key: 'unemployment', label: 'Unemployment', suffix: '%', step: '0.01',
       note: 'A lower unemployment rate signals a tighter labor market and a stronger economy; rising unemployment is a classic recession warning and tends to weigh on the currency.' },
-    { key: 'employment_change', label: 'Employment change', suffix: 'K', step: '1', applies: ['USD'],
-      note: 'The net change in jobs for the month -- a strong print signals a resilient labor market and economic momentum (currency-positive); a weak or negative print raises recession concern.' },
+    { key: 'employment_change', label: 'Employment change', suffix: 'K', step: '1', applies: ['USD', 'CAD', 'AUD', 'GBP'],
+      note: 'The net change in jobs for the month -- a strong print signals a resilient labor market and economic momentum (currency-positive); a weak or negative print raises recession concern. For GBP this is ONS\'s own 3-month-vs-prior-3-month convention, not a literal month-over-month figure -- the underlying survey is too noisy for that.' },
   ] },
   { title: 'Activity', metrics: [
     { key: 'retail_sales_yoy', label: 'Retail sales YoY', suffix: '%', step: '0.01', applies: ['USD'],

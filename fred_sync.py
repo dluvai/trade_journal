@@ -47,7 +47,7 @@ FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
 #   'yoy'   = the series is an index/level; compute % change vs ~1 year earlier
 SERIES = {
     "USD": {
-        "interest_rate": ("FEDFUNDS", "level"),           # Federal funds effective rate
+        "interest_rate": ("DFEDTARU", "level"),            # FOMC target range upper bound -- the headline "Fed rate" figure markets quote, not the effective/traded rate (FEDFUNDS), which sits inside the range and reads as a different, lower number
         "gdp_yoy":       ("GDPC1", "yoy"),                 # Real GDP, quarterly
         "unemployment":  ("UNRATE", "level"),
         "cpi_yoy":       ("CPIAUCSL", "yoy"),               # CPI index, monthly

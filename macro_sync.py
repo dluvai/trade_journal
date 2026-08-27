@@ -1,7 +1,8 @@
 """
 Unified macro-data sync: dispatches each (currency, metric) job to whichever
-of fred_sync.py or oecd_sync.py is the better source, then does one merged
-db.upsert_macro() write per currency -- never two independent passes.
+of fred_sync.py, oecd_sync.py, or employment_sync.py is the better source,
+then does one merged db.upsert_macro() write per currency -- never
+independent passes racing each other.
 
 Why one dispatch table instead of calling fred_sync.sync() then
 oecd_sync.sync() back to back: auto_sync.py's per-event poller diffs a
@@ -24,6 +25,7 @@ and why.
 Run standalone to see exactly what it would fetch, and from where:
     python macro_sync.py
 """
+import employment_sync
 import fred_sync
 import oecd_sync
 import db
@@ -39,6 +41,12 @@ OECD_ROUTED = {
     ("NZD", "cpi_yoy"), ("NZD", "unemployment"),
     ("CHF", "unemployment"),
 }
+
+# employment_change for the three currencies whose employment report is an
+# actual FX market mover -- see employment_sync.py's docstring for why
+# these three and not the others. USD's employment_change is unaffected,
+# still comes from fred_sync (nonfarm payrolls).
+EMPLOYMENT_ROUTED = {("CAD", "employment_change"), ("AUD", "employment_change"), ("GBP", "employment_change")}
 
 
 def sync(currencies=None, dry_run=False):
@@ -56,6 +64,7 @@ def sync(currencies=None, dry_run=False):
     # and then picking, per (currency, metric), which report to keep.
     fred_report = fred_sync.sync(currencies=currencies, dry_run=True)
     oecd_report = oecd_sync.sync(currencies=currencies, dry_run=True)
+    employment_report = employment_sync.sync(currencies=currencies, dry_run=True)
 
     report = {ccy: {} for ccy in currencies}
     fetched_by_ccy = {ccy: {} for ccy in currencies}
@@ -82,6 +91,14 @@ def sync(currencies=None, dry_run=False):
             report[ccy][metric] = entry
             if entry.get("error") is None and entry.get("value") is not None:
                 fetched_by_ccy[ccy][metric] = entry["value"]
+
+        if (ccy, "employment_change") in EMPLOYMENT_ROUTED:
+            entry = employment_report.get(ccy)
+            if entry:
+                entry = dict(entry, source="national_stats")
+                report[ccy]["employment_change"] = entry
+                if entry.get("error") is None and entry.get("value") is not None:
+                    fetched_by_ccy[ccy]["employment_change"] = entry["value"]
 
     if not dry_run:
         for ccy in currencies:
