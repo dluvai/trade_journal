@@ -366,6 +366,21 @@ def update_strategy(user_id, strategy_id, name, description):
     )
 
 
+def assign_untagged_trades(user_id, strategy_id):
+    """Bulk-tag every trade this user has logged with no strategy at all
+    (strategy_id IS NULL) onto the given strategy in one shot -- retagging
+    trades one at a time through the edit modal doesn't scale once you
+    already have a real trade history and are only now starting to tag by
+    strategy. Returns how many rows were actually touched."""
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    rs = conn.execute(
+        "UPDATE trades SET strategy_id=?, updated_at=? WHERE user_id=? AND strategy_id IS NULL",
+        (strategy_id, now, user_id),
+    )
+    return rs.rows_affected
+
+
 # ---------- macro snapshot (global, shared by every user) ----------
 
 # Same global data read by every user on every Macros-page load (often

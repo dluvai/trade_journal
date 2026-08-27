@@ -655,6 +655,12 @@ def api_delete_strategy(strategy_id):
     return jsonify({"ok": True})
 
 
+@app.post("/api/strategies/<int:strategy_id>/assign-untagged")
+def api_assign_untagged(strategy_id):
+    count = db.assign_untagged_trades(session["user_id"], strategy_id)
+    return jsonify({"count": count})
+
+
 @app.get("/api/macro")
 def api_get_macro():
     return jsonify(db.list_macro())

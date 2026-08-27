@@ -164,16 +164,22 @@ const DC = (function () {
   function renderTiles(hostId, stats, drawdown) {
     const host0 = document.getElementById(hostId);
     if (!host0) return;
+    // With zero trades in range, every ratio computes to a meaningless 0 --
+    // coloring that red/green (a 0% win rate reading as a "bad" critical
+    // result, a break-even return reading as "good") makes an empty range
+    // look like a losing day instead of just an unfilled one. Neutral
+    // dashes instead, matching how "Current streak" already handles zero.
+    const noData = stats.total === 0;
     const pf = isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞';
     const tiles = [
       { label: 'Total trades', value: stats.total },
-      { label: 'Win rate', value: (stats.winRate * 100).toFixed(1) + '%', cls: stats.winRate >= 0.5 ? 'good' : 'critical' },
-      { label: 'Total return', value: fmtPct(stats.totalReturn), cls: stats.totalReturn >= 0 ? 'good' : 'critical' },
-      { label: 'Profit factor', value: pf, cls: stats.profitFactor >= 1 ? 'good' : 'critical' },
-      { label: 'Avg RR (wins)', value: stats.avgRRwin.toFixed(2) + 'R' },
-      { label: 'Expectancy / trade', value: fmtPct(stats.expectancy, 2), cls: stats.expectancy >= 0 ? 'good' : 'critical' },
+      { label: 'Win rate', value: noData ? '—' : (stats.winRate * 100).toFixed(1) + '%', cls: noData ? '' : (stats.winRate >= 0.5 ? 'good' : 'critical') },
+      { label: 'Total return', value: noData ? '—' : fmtPct(stats.totalReturn), cls: noData ? '' : (stats.totalReturn >= 0 ? 'good' : 'critical') },
+      { label: 'Profit factor', value: noData ? '—' : pf, cls: noData ? '' : (stats.profitFactor >= 1 ? 'good' : 'critical') },
+      { label: 'Avg RR (wins)', value: noData ? '—' : stats.avgRRwin.toFixed(2) + 'R' },
+      { label: 'Expectancy / trade', value: noData ? '—' : fmtPct(stats.expectancy, 2), cls: noData ? '' : (stats.expectancy >= 0 ? 'good' : 'critical') },
       { label: 'Current streak', value: (stats.streak > 0 ? stats.streak + 'W' : stats.streak < 0 ? Math.abs(stats.streak) + 'L' : '—'), cls: stats.streak > 0 ? 'good' : (stats.streak < 0 ? 'critical' : '') },
-      { label: 'Best streak', value: stats.bestStreak + 'W', cls: 'good' },
+      { label: 'Best streak', value: noData ? '—' : stats.bestStreak + 'W', cls: noData ? '' : 'good' },
       { label: 'Plan violations', value: stats.violations, cls: stats.violations > 0 ? 'critical' : '' },
     ];
     if (drawdown && drawdown.maxDrawdown > 0) {
@@ -1073,6 +1079,6 @@ const DC = (function () {
     apiSend, fetchTrades, fetchStrategies, deleteTrade,
     initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initMobileSidebar,
     setTheme, setContrast, getStoredTheme, getStoredContrast,
-    computeDateRangeBounds, filterTradesByRange, renderDateRangeFilter, ALL_TIME_RANGE, DATE_RANGE_PRESETS,
+    computeDateRangeBounds, filterTradesByRange, renderDateRangeFilter, ALL_TIME_RANGE, DATE_RANGE_PRESETS, localTodayStr,
   };
 })();

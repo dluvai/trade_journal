@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Strategy — SteadFast{% endblock %}
-{% block header_controls %}<div id="dateRangeFilter"></div>{% endblock %}
 {% block content %}
 <div class="panel">
   <h2>Performance by Strategy</h2>
@@ -39,14 +38,14 @@
 <script>
 let ALL_TRADES = [];
 let ALL_STRATEGIES = [];
-let dateRange = DC.ALL_TIME_RANGE;
 
 // Reuses the exact same grouping/rendering the Pairs page uses for
 // performance-by-pair -- a strategy tag on a trade is just another grouping
-// key, same as pair/day/session already are.
+// key, same as pair/day/session already are. No date filter here (only
+// Overview/Trades have one) -- this is a lifetime view of each strategy's
+// track record, not a day-to-day one.
 function renderStrategyPerformance() {
-  const filtered = DC.filterTradesByRange(ALL_TRADES, dateRange);
-  const groups = DC.computeGroupStats(filtered, 'strategy_name');
+  const groups = DC.computeGroupStats(ALL_TRADES, 'strategy_name');
   const shaped = groups.map(g => ({ pair: g.key, total: g.total, wins: g.wins, pnl: g.pnl }));
   DC.renderPairTable('strategyPerformance', shaped, 'Strategy');
 }
@@ -54,6 +53,7 @@ function renderStrategyPerformance() {
 function renderStrategiesList(list) {
   const host = document.getElementById('strategiesList');
   if (!list.length) { host.innerHTML = '<div class="empty">No strategies yet — click "+ Create Strategy" to add one.</div>'; return; }
+  const untaggedCount = ALL_TRADES.filter(t => t.strategy_id == null).length;
   host.innerHTML = [...list].reverse().map(s => `
     <div class="panel" style="margin-bottom:12px;">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
@@ -64,6 +64,10 @@ function renderStrategiesList(list) {
         </div>
       </div>
       <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.65; white-space:pre-wrap; margin-top:10px;">${s.description || '<em>No details written.</em>'}</div>
+      ${untaggedCount > 0 ? `
+      <div class="form-actions" style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;">
+        <button class="iconbtn small" data-assign-untagged="${s.id}">Tag all ${untaggedCount} untagged trade${untaggedCount === 1 ? '' : 's'} with this strategy</button>
+      </div>` : ''}
     </div>`).join('');
   host.querySelectorAll('[data-delete-strategy]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -76,6 +80,16 @@ function renderStrategiesList(list) {
     btn.addEventListener('click', () => {
       const strategy = ALL_STRATEGIES.find(s => String(s.id) === btn.dataset.editStrategy);
       if (strategy) openStrategyForm(strategy);
+    });
+  });
+  host.querySelectorAll('[data-assign-untagged]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const strategy = ALL_STRATEGIES.find(s => String(s.id) === btn.dataset.assignUntagged);
+      if (!strategy) return;
+      if (!confirm(`Tag all ${untaggedCount} untagged trade${untaggedCount === 1 ? '' : 's'} with "${strategy.name}"? This can't be undone in bulk -- you'd need to retag them individually.`)) return;
+      await DC.apiSend('POST', `/api/strategies/${strategy.id}/assign-untagged`, {});
+      ALL_TRADES = await DC.fetchTrades();
+      loadStrategies();
     });
   });
 }
@@ -125,8 +139,6 @@ strategyForm.addEventListener('submit', async (e) => {
     strategyFormError.textContent = err.message;
   }
 });
-
-DC.renderDateRangeFilter('dateRangeFilter', dateRange, (r) => { dateRange = r; renderStrategyPerformance(); });
 
 (async function init() {
   ALL_TRADES = await DC.fetchTrades();
