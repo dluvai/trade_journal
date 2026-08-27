@@ -209,13 +209,17 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 
 /* iframe embeds report height:100% against whatever we give the wrapper --
    without an explicit height here the Myfxbook calendar collapses to 0px.
-   Myfxbook's widget only renders light (no dark-mode param, and a CSS
-   invert() filter distorts the flag icons' real colors -- tried it, looked
-   worse) -- framed as a light card instead of forced dark so it reads as
-   deliberate inset content rather than a theming bug. */
+   Myfxbook's widget only renders light -- there's no dark-mode param, and a
+   CSS invert() filter to fake one distorts the flag icons' real colors
+   (can't selectively spare them: it's one cross-origin iframe, so there's
+   no way to filter the calendar rows but not the flags inside them). Full
+   color-matching to the page isn't reachable without that tradeoff, so
+   this only softens the seam -- rounded to match .panel's own radius, a
+   hairline border in the page's real --border token, no extra padding ring
+   -- rather than pretend the light/dark boundary isn't there. */
 .calendar-embed { height: calc(100vh - 200px); min-height: 520px;
-  background: #fff; border-radius: 8px; padding: 8px; box-sizing: border-box; }
-.calendar-embed iframe { display: block; border-radius: 4px; }
+  border-radius: 9px; overflow: hidden; border: 1px solid var(--border); }
+.calendar-embed iframe { display: block; }
 @media (max-width: 640px) { .calendar-embed { height: calc(100vh - 260px); min-height: 420px; } }
 
 svg { display: block; width: 100%; height: auto; overflow: visible; }
