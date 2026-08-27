@@ -40,38 +40,47 @@
   <div class="form-grid halves">
     <div class="field"><label>Username</label><div>{{ user.username }}</div></div>
     <div class="field"><label>Name</label><div>{{ (user.first_name or '') ~ ' ' ~ (user.last_name or '') }}</div></div>
-    <div class="field">
-      <label>Email</label>
-      <div>
-        {% if user.email %}
-          {{ user.email }}
-          {% if user.email_verified %}
-            <span style="color:var(--good); font-size:11.5px; margin-left:6px;">&#10003; Verified</span>
-          {% else %}
-            <span style="color:var(--text-muted); font-size:11.5px; margin-left:6px;">Unverified</span>
-          {% endif %}
-        {% else %}
-          <span style="color:var(--text-muted);">No email on file</span>
-        {% endif %}
-      </div>
-    </div>
     <div class="field"><label>Member Since</label><div>{{ user.created_at[:10] }}</div></div>
   </div>
 
   <form id="accountForm" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+    <div class="form-grid halves">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" name="email" id="accountEmailInput" value="{{ user.email or '' }}" placeholder="you@example.com">
+        <div class="error" id="err_account_email" style="display:none;"></div>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-top:9px;">
+          <span id="emailVerifiedBadge"></span>
+          <button type="button" class="iconbtn small" id="sendVerifyBtn" style="display:none;">Send verification code</button>
+        </div>
+      </div>
+    </div>
+    <div id="verifyCodeRow" style="display:none; align-items:center; gap:8px; margin-bottom:14px;">
+      <input type="text" id="verifyCodeInput" placeholder="6-digit code" inputmode="numeric" maxlength="6" style="max-width:140px; margin-bottom:0;">
+      <button type="button" class="iconbtn small" id="confirmVerifyBtn">Confirm</button>
+      <span id="verifyStatus" style="font-size:12px;"></span>
+    </div>
     <div class="form-grid thirds">
       <div class="field">
         <label>Country</label>
-        <select name="country">
+        <select name="country" id="accountCountrySelect">
           {{ country_options | safe }}
         </select>
+        <div class="error" id="err_account_country" style="display:none;"></div>
       </div>
       <div class="field"><label>Street Address</label><input type="text" name="address_line1" value="{{ user.address_line1 or '' }}"></div>
       <div class="field"><label>City</label><input type="text" name="address_city" value="{{ user.address_city or '' }}"></div>
     </div>
     <div class="form-grid halves">
       <div class="field"><label>Postal Code</label><input type="text" name="address_postal_code" value="{{ user.address_postal_code or '' }}"></div>
-      <div class="field"><label>Phone</label><input type="text" name="phone" value="{{ user.phone or '' }}"></div>
+      <div class="field">
+        <label>Phone</label>
+        <input type="text" name="phone" id="accountPhoneInput" value="{{ user.phone or '' }}">
+        <div class="error" id="err_account_phone" style="display:none;"></div>
+      </div>
     </div>
     <div class="form-actions">
       <button type="submit" class="btn-primary">Save Account Details</button>
@@ -224,12 +233,89 @@
   const accountStatus = document.getElementById('accountStatus');
   const countryOnFile = document.getElementById('countryOnFile');
   const countryOnFileText = document.getElementById('countryOnFileText');
+  const emailInput = document.getElementById('accountEmailInput');
+  const emailVerifiedBadge = document.getElementById('emailVerifiedBadge');
+  const sendVerifyBtn = document.getElementById('sendVerifyBtn');
+  const verifyCodeRow = document.getElementById('verifyCodeRow');
+  const verifyCodeInput = document.getElementById('verifyCodeInput');
+  const confirmVerifyBtn = document.getElementById('confirmVerifyBtn');
+  const verifyStatus = document.getElementById('verifyStatus');
+
+  // ---------- email status badge: reflects current saved state, not the input's live value ----------
+
+  function renderEmailStatus(email, verified) {
+    if (!email) {
+      emailVerifiedBadge.textContent = 'No email on file';
+      emailVerifiedBadge.style.color = 'var(--text-muted)';
+      sendVerifyBtn.style.display = 'none';
+    } else if (verified) {
+      emailVerifiedBadge.textContent = '✓ Verified';
+      emailVerifiedBadge.style.color = 'var(--good)';
+      sendVerifyBtn.style.display = 'none';
+    } else {
+      emailVerifiedBadge.textContent = 'Unverified';
+      emailVerifiedBadge.style.color = 'var(--text-muted)';
+      sendVerifyBtn.style.display = '';
+    }
+    verifyCodeRow.style.display = 'none';
+    verifyStatus.textContent = '';
+  }
+  renderEmailStatus({{ (user.email or '') | tojson }}, {{ 'true' if user.email_verified else 'false' }});
+
+  sendVerifyBtn.addEventListener('click', async () => {
+    sendVerifyBtn.disabled = true;
+    verifyStatus.style.color = '';
+    verifyStatus.textContent = 'Sending...';
+    try {
+      await DC.apiSend('POST', '/profile/verify-email/request', {});
+      verifyCodeRow.style.display = 'flex';
+      verifyStatus.textContent = 'Code sent -- check your inbox.';
+    } catch (e) {
+      verifyStatus.style.color = 'var(--critical)';
+      verifyStatus.textContent = e.message;
+    } finally {
+      sendVerifyBtn.disabled = false;
+    }
+  });
+
+  confirmVerifyBtn.addEventListener('click', async () => {
+    const code = verifyCodeInput.value.trim();
+    if (!code) return;
+    confirmVerifyBtn.disabled = true;
+    try {
+      await DC.apiSend('POST', '/profile/verify-email/confirm', { code });
+      renderEmailStatus(emailInput.value.trim(), true);
+    } catch (e) {
+      verifyStatus.style.color = 'var(--critical)';
+      verifyStatus.textContent = e.message;
+    } finally {
+      confirmVerifyBtn.disabled = false;
+    }
+  });
+
+  // Account-form errors surface directly below the field they're about
+  // (same rule as the signup page), not as one generic banner -- accountStatus
+  // is reserved for the "Saved." confirmation and truly unattributable errors.
+  const accountErrEls = {
+    email: document.getElementById('err_account_email'),
+    country: document.getElementById('err_account_country'),
+    phone: document.getElementById('err_account_phone'),
+  };
+  function clearAccountErrors() {
+    Object.values(accountErrEls).forEach(el => { el.style.display = 'none'; el.textContent = ''; });
+  }
+  function showAccountError(field, text) {
+    const el = accountErrEls[field];
+    if (el) { el.textContent = text; el.style.display = 'block'; }
+    else { accountStatus.style.color = 'var(--critical)'; accountStatus.textContent = text; }
+  }
 
   accountForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(accountForm);
     const payload = Object.fromEntries(fd.entries());
     accountStatus.textContent = '';
+    clearAccountErrors();
     try {
       const data = await DC.apiSend('POST', '/profile/account', payload);
       accountStatus.style.color = 'var(--good)';
@@ -241,9 +327,15 @@
       } else {
         countryOnFile.style.display = 'none';
       }
+      if ('email' in data) {
+        renderEmailStatus(data.email, data.email_verified);
+      }
     } catch (e) {
-      accountStatus.style.color = 'var(--critical)';
-      accountStatus.textContent = e.message;
+      const msg = e.message;
+      if (/email/i.test(msg)) showAccountError('email', msg);
+      else if (/country/i.test(msg)) showAccountError('country', msg);
+      else if (/phone/i.test(msg)) showAccountError('phone', msg);
+      else showAccountError(null, msg);
     }
   });
 })();

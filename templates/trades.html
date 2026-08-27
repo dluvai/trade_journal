@@ -1,13 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Trades — SteadFast{% endblock %}
-{% block header_controls %}<div id="dateRangeFilter"></div>{% endblock %}
+{% block header_controls %}<div id="accountFilter"></div>{% endblock %}
 {% block add_trade_btn %}<button class="btn-primary" id="addTradeBtn">+ Add Trade</button>{% endblock %}
 {% block content %}
 <div class="form-actions" style="margin-bottom:14px;">
   <button class="iconbtn" id="exportCsvBtn">Export CSV</button>
   <button class="iconbtn" id="importCsvBtn">Import</button>
 </div>
+<div class="panel" id="accountComparePanel" hidden>
+  <h2>Account Comparison</h2>
+  <div id="accountCompareTable"></div>
+</div>
 <div id="bestWorstTrades"></div>
+<div class="panel-controls-row">
+  <div id="dateRangeFilter"></div>
+</div>
 <div class="panel">
   <h2>Trades</h2>
   <div class="table-scroll"><div id="tradesTable"></div></div>
@@ -62,7 +69,9 @@
 {% block scripts %}
 <script>
 let ALL_TRADES = [];
-let dateRange = DC.ALL_TIME_RANGE;
+let ALL_ACCOUNTS = [];
+let selectedAccountIds = [];
+let dateRange = DC.defaultDateRange();
 
 function onEditTrade(id) {
   const t = ALL_TRADES.find(x => x.id === id);
@@ -75,17 +84,27 @@ async function onDeleteTrade(id) {
   window.location.reload();
 }
 
+function accountFilteredTrades() {
+  const dateFiltered = DC.filterTradesByRange(ALL_TRADES, dateRange);
+  return dateFiltered.filter(t => {
+    const bucket = ALL_ACCOUNTS.some(a => a.id === t.account_id) ? t.account_id : 'unassigned';
+    return selectedAccountIds.includes(bucket);
+  });
+}
+
 function render() {
-  DC.renderAll(ALL_TRADES, dateRange, {
+  DC.renderAll(accountFilteredTrades(), dateRange, {
     onRangeChange: (r) => { dateRange = r; render(); },
     onEdit: onEditTrade,
     onDelete: onDeleteTrade,
   });
+  const dateFiltered = DC.filterTradesByRange(ALL_TRADES, dateRange);
+  const shown = DC.renderAccountComparisonTable('accountCompareTable', dateFiltered, ALL_ACCOUNTS, selectedAccountIds);
+  document.getElementById('accountComparePanel').hidden = !shown;
 }
 
 document.getElementById('exportCsvBtn').addEventListener('click', () => {
-  const filtered = DC.filterTradesByRange(ALL_TRADES, dateRange);
-  DC.exportCsv(filtered, `steadfast_export_${new Date().toISOString().slice(0, 10)}.csv`);
+  DC.exportCsv(accountFilteredTrades(), `steadfast_export_${new Date().toISOString().slice(0, 10)}.csv`);
 });
 
 // ---------- CSV/XLSX import ----------
@@ -178,7 +197,12 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
 })();
 
 (async function init() {
-  ALL_TRADES = await DC.fetchTrades();
+  [ALL_TRADES, ALL_ACCOUNTS] = await Promise.all([DC.fetchTrades(), DC.fetchTradingAccounts()]);
+  selectedAccountIds = ALL_ACCOUNTS.map(a => a.id).concat(['unassigned']);
+  DC.renderAccountFilter('accountFilter', ALL_ACCOUNTS, selectedAccountIds, (ids, accounts) => {
+    ALL_ACCOUNTS = accounts;
+    render();
+  });
   render();
 })();
 </script>

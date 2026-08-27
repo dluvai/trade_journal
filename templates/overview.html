@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Overview — SteadFast{% endblock %}
-{% block header_controls %}<div id="dateRangeFilter"></div>{% endblock %}
+{% block header_controls %}<div id="accountFilter"></div>{% endblock %}
 {% block ticker %}<div class="ticker-strip" id="tickerStrip"></div>{% endblock %}
 {% block content %}
 <div class="tiles" id="tiles"></div>
+<div class="panel" id="accountComparePanel" hidden>
+  <h2>Account Comparison</h2>
+  <div id="accountCompareTable"></div>
+</div>
+<div class="panel-controls-row">
+  <div id="dateRangeFilter"></div>
+</div>
 <div class="panel">
   <h2>Equity Curve</h2>
   <div id="equityChart"></div>
@@ -40,16 +47,30 @@
 {% block scripts %}
 <script>
 let ALL_TRADES = [];
-let dateRange = DC.ALL_TIME_RANGE;
+let ALL_ACCOUNTS = [];
+let selectedAccountIds = [];
+let dateRange = DC.defaultDateRange();
 
 function render() {
-  DC.renderAll(ALL_TRADES, dateRange, {
+  const dateFiltered = DC.filterTradesByRange(ALL_TRADES, dateRange);
+  const combined = dateFiltered.filter(t => {
+    const bucket = ALL_ACCOUNTS.some(a => a.id === t.account_id) ? t.account_id : 'unassigned';
+    return selectedAccountIds.includes(bucket);
+  });
+  DC.renderAll(combined, dateRange, {
     onRangeChange: (r) => { dateRange = r; render(); },
   });
+  const shown = DC.renderAccountComparisonTable('accountCompareTable', dateFiltered, ALL_ACCOUNTS, selectedAccountIds);
+  document.getElementById('accountComparePanel').hidden = !shown;
 }
 
 (async function init() {
-  ALL_TRADES = await DC.fetchTrades();
+  [ALL_TRADES, ALL_ACCOUNTS] = await Promise.all([DC.fetchTrades(), DC.fetchTradingAccounts()]);
+  selectedAccountIds = ALL_ACCOUNTS.map(a => a.id).concat(['unassigned']);
+  DC.renderAccountFilter('accountFilter', ALL_ACCOUNTS, selectedAccountIds, (ids, accounts) => {
+    ALL_ACCOUNTS = accounts;
+    render();
+  });
   render();
 })();
 </script>

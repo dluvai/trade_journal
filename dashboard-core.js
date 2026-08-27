@@ -500,21 +500,25 @@ const DC = (function () {
 
   // ---------- pair table ----------
 
-  function renderPairTable(hostId, pairs, labelHeader) {
+  function renderPairTable(hostId, pairs, labelHeader, extraColumns) {
     const host = document.getElementById(hostId);
     if (!host) return;
     if (!pairs.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+    extraColumns = extraColumns || [];
     const rows = pairs.map(p => {
       const wr = p.total ? p.wins / p.total : 0;
+      const extraCells = extraColumns.map(c => `<td class="num">${c.format(p[c.key])}</td>`).join('');
       return `<tr>
         <td class="strong">${p.pair}</td>
         <td class="num">${p.total}</td>
         <td class="num"><span class="winrate-cell"><span class="winbar-track"><span class="winbar-fill" style="width:${(wr * 100).toFixed(0)}%"></span></span>${(wr * 100).toFixed(0)}%</span></td>
         <td class="num" style="color:${p.pnl >= 0 ? 'var(--good)' : 'var(--critical)'}">${fmtPct(p.pnl, 2)}</td>
+        ${extraCells}
       </tr>`;
     }).join('');
+    const extraHeaders = extraColumns.map(c => `<th class="num">${c.header}</th>`).join('');
     host.innerHTML = `<table>
-      <thead><tr><th>${labelHeader || 'Pair'}</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Return</th></tr></thead>
+      <thead><tr><th>${labelHeader || 'Pair'}</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Return</th>${extraHeaders}</tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   }
@@ -726,11 +730,19 @@ const DC = (function () {
   // ---------- date-range filter, tabs ----------
 
   const DATE_RANGE_PRESETS = [
-    ['all', 'All Time'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Past 7 Days'],
+    ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Past 7 Days'],
     ['1m', '1 Month'], ['3m', '3 Months'], ['6m', '6 Months'], ['12m', '12 Months'], ['24m', '24 Months'],
-    ['custom', 'Custom'],
+    ['custom', 'Custom'], ['all', 'All Time'],
   ];
   const ALL_TIME_RANGE = { preset: 'all', start: '0000-01-01', end: '9999-12-31' };
+
+  function defaultDateRange() {
+    // Overview/Trades both open on the last 7 days, not All Time -- a
+    // freshly-loaded dashboard should read as "recent activity," not a
+    // lifetime dump that has to be manually narrowed every session.
+    const bounds = computeDateRangeBounds('7d', null, null, localTodayStr());
+    return { preset: '7d', start: bounds.start, end: bounds.end };
+  }
 
   function computeDateRangeBounds(preset, customStart, customEnd, todayStr) {
     if (preset === 'all') return { start: '0000-01-01', end: '9999-12-31' };
@@ -801,6 +813,217 @@ const DC = (function () {
     });
   }
 
+  // ---------- account filter (Overview/Trades only) ----------
+
+  // selectedIds holds real account ids (numbers) plus the sentinel string
+  // 'unassigned' for trades with no account_id (or one pointing at a
+  // since-deleted account -- see renderAccountComparisonTable). Mutated in
+  // place on every checkbox toggle rather than rebuilt, so the popover
+  // doesn't visually collapse mid-interaction while ticking several boxes.
+  function renderAccountFilter(hostId, accounts, selectedIds, onChange) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const allValues = accounts.map(a => a.id).concat(['unassigned']);
+
+    function labelFor() {
+      const isAll = allValues.length > 0 && allValues.every(v => selectedIds.includes(v));
+      if (isAll) return 'All accounts';
+      if (selectedIds.length === 0) return 'No accounts';
+      if (selectedIds.length === 1) {
+        const only = selectedIds[0];
+        if (only === 'unassigned') return 'Unassigned';
+        const acc = accounts.find(a => a.id === only);
+        return acc ? acc.name : '1 account';
+      }
+      return `${selectedIds.length} accounts`;
+    }
+
+    host.innerHTML = `
+      <div class="account-filter">
+        <button type="button" class="iconbtn account-filter-trigger" aria-expanded="false" aria-haspopup="true">
+          <span class="account-filter-label">${labelFor()}</span><span class="account-filter-caret">▾</span>
+        </button>
+        <div class="account-filter-popover">
+          <label class="account-filter-option account-filter-all">
+            <input type="checkbox" data-all><span>All accounts</span>
+          </label>
+          <div class="account-filter-divider"></div>
+          ${accounts.map(a => `
+            <label class="account-filter-option">
+              <input type="checkbox" data-id="${a.id}"><span>${a.name}</span>
+            </label>`).join('')}
+          <label class="account-filter-option">
+            <input type="checkbox" data-id="unassigned"><span>Unassigned</span>
+          </label>
+          <div class="account-filter-divider"></div>
+          <a href="#" class="account-filter-manage">+ Manage accounts</a>
+        </div>
+      </div>`;
+
+    const root = host.querySelector('.account-filter');
+    const labelEl = root.querySelector('.account-filter-label');
+    const allCheckbox = root.querySelector('[data-all]');
+    const itemCheckboxes = Array.from(root.querySelectorAll('.account-filter-option input:not([data-all])'));
+    itemCheckboxes.forEach(cb => {
+      const value = cb.dataset.id === 'unassigned' ? 'unassigned' : Number(cb.dataset.id);
+      cb.checked = selectedIds.includes(value);
+    });
+    allCheckbox.checked = allValues.length > 0 && allValues.every(v => selectedIds.includes(v));
+
+    const trigger = root.querySelector('.account-filter-trigger');
+
+    function closePopover() {
+      root.classList.remove('is-open');
+      trigger.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', onDocClick);
+    }
+    function onDocClick(e) { if (!root.contains(e.target)) closePopover(); }
+    trigger.addEventListener('click', () => {
+      const opening = !root.classList.contains('is-open');
+      root.classList.toggle('is-open', opening);
+      trigger.setAttribute('aria-expanded', String(opening));
+      if (opening) setTimeout(() => document.addEventListener('click', onDocClick), 0);
+      else document.removeEventListener('click', onDocClick);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.classList.contains('is-open')) closePopover(); });
+
+    allCheckbox.addEventListener('change', () => {
+      selectedIds.length = 0;
+      if (allCheckbox.checked) selectedIds.push(...allValues);
+      itemCheckboxes.forEach(cb => { cb.checked = allCheckbox.checked; });
+      labelEl.textContent = labelFor();
+      onChange(selectedIds, accounts);
+    });
+
+    itemCheckboxes.forEach(cb => {
+      cb.addEventListener('change', () => {
+        const value = cb.dataset.id === 'unassigned' ? 'unassigned' : Number(cb.dataset.id);
+        if (cb.checked) { if (!selectedIds.includes(value)) selectedIds.push(value); }
+        else { const idx = selectedIds.indexOf(value); if (idx >= 0) selectedIds.splice(idx, 1); }
+        allCheckbox.checked = allValues.every(v => selectedIds.includes(v));
+        labelEl.textContent = labelFor();
+        onChange(selectedIds, accounts);
+      });
+    });
+
+    root.querySelector('.account-filter-manage').addEventListener('click', (e) => {
+      e.preventDefault();
+      closePopover();
+      openAccountManageModal(() => {
+        fetchTradingAccounts().then(freshAccounts => {
+          // Keep existing selections, and auto-select any brand new account
+          // (matches "nothing is hidden by default" -- see renderAll's
+          // ticked-by-default rule at page init).
+          freshAccounts.forEach(a => { if (!selectedIds.includes(a.id)) selectedIds.push(a.id); });
+          renderAccountFilter(hostId, freshAccounts, selectedIds, onChange);
+          onChange(selectedIds, freshAccounts);
+        });
+      });
+    });
+  }
+
+  // Groups trades ticked-account-first: real accounts get an exact
+  // account_id match, and the 'unassigned' bucket (if ticked) catches
+  // everything else -- including trades whose account_id points at an
+  // account that's since been deleted, matching row_to_dict's own
+  // server-side "Unassigned" fallback for the same case. Returns false
+  // (and renders nothing) when fewer than 2 groups are actually ticked,
+  // so the caller knows whether to show or hide the comparison panel.
+  function renderAccountComparisonTable(hostId, trades, accounts, selectedIds) {
+    const groups = [];
+    accounts.forEach(a => {
+      if (selectedIds.includes(a.id)) {
+        groups.push({ name: a.name, trades: trades.filter(t => t.account_id === a.id) });
+      }
+    });
+    if (selectedIds.includes('unassigned')) {
+      const knownIds = accounts.map(a => a.id);
+      groups.push({ name: 'Unassigned', trades: trades.filter(t => !knownIds.includes(t.account_id)) });
+    }
+    if (groups.length < 2) return false;
+
+    const rows = groups.map(g => {
+      const stats = computeStats(g.trades);
+      return { pair: g.name, total: stats.total, wins: stats.wins, pnl: stats.totalReturn, profitFactor: stats.profitFactor, expectancy: stats.expectancy };
+    });
+    renderPairTable(hostId, rows, 'Account', [
+      { key: 'profitFactor', header: 'Profit Factor', format: v => isFinite(v) ? v.toFixed(2) : '∞' },
+      { key: 'expectancy', header: 'Expectancy', format: v => v.toFixed(2) },
+    ]);
+    return true;
+  }
+
+  // ---------- manage-accounts modal (shared markup lives in base.html) ----------
+
+  let accountModalInit = false;
+  let accountModalState = null; // { editingId, onChanged }
+
+  function _loadAccountManageList() {
+    const list = document.getElementById('accountManageList');
+    fetchTradingAccounts().then(accounts => {
+      if (!accounts.length) { list.innerHTML = '<div class="empty">No accounts yet.</div>'; return; }
+      list.innerHTML = accounts.map(a => `
+        <div class="account-manage-row">
+          <span>${a.name}</span>
+          <span class="form-actions">
+            <button type="button" class="iconbtn small" data-edit-account="${a.id}" data-name="${a.name}">Edit</button>
+            <button type="button" class="iconbtn small danger" data-delete-account="${a.id}">Delete</button>
+          </span>
+        </div>`).join('');
+      list.querySelectorAll('[data-delete-account]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this account? Its trades move to Unassigned.')) return;
+          await apiSend('DELETE', `/api/trading-accounts/${btn.dataset.deleteAccount}`, {});
+          _loadAccountManageList();
+          if (accountModalState.onChanged) accountModalState.onChanged();
+        });
+      });
+      list.querySelectorAll('[data-edit-account]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          accountModalState.editingId = btn.dataset.editAccount;
+          document.getElementById('accountFormTitle').textContent = 'Edit Account';
+          document.getElementById('accountForm').elements.name.value = btn.dataset.name;
+        });
+      });
+    });
+  }
+
+  function openAccountManageModal(onChanged) {
+    const backdrop = document.getElementById('accountModalBackdrop');
+    if (!backdrop) return;
+    accountModalState = { editingId: null, onChanged };
+    const form = document.getElementById('accountForm');
+    const formError = document.getElementById('accountFormError');
+    form.reset();
+    document.getElementById('accountFormTitle').textContent = 'Create Account';
+    formError.textContent = '';
+    backdrop.classList.remove('hidden');
+    _loadAccountManageList();
+
+    if (!accountModalInit) {
+      accountModalInit = true;
+      document.getElementById('cancelAccountForm').addEventListener('click', () => backdrop.classList.add('hidden'));
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.classList.add('hidden'); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !backdrop.classList.contains('hidden')) backdrop.classList.add('hidden'); });
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = form.elements.name.value.trim();
+        if (!name) return;
+        try {
+          if (accountModalState.editingId) await apiSend('PUT', `/api/trading-accounts/${accountModalState.editingId}`, { name });
+          else await apiSend('POST', '/api/trading-accounts', { name });
+          accountModalState.editingId = null;
+          document.getElementById('accountFormTitle').textContent = 'Create Account';
+          form.reset();
+          _loadAccountManageList();
+          if (accountModalState.onChanged) accountModalState.onChanged();
+        } catch (err) {
+          formError.textContent = err.message;
+        }
+      });
+    }
+  }
+
   function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -855,6 +1078,7 @@ const DC = (function () {
 
   async function fetchTrades() { const r = await fetch('/api/trades'); return r.json(); }
   async function fetchStrategies() { const r = await fetch('/api/strategies'); return r.json(); }
+  async function fetchTradingAccounts() { const r = await fetch('/api/trading-accounts'); return r.json(); }
   async function deleteTrade(id) { await fetch(`/api/trades/${id}`, { method: 'DELETE' }); }
 
   // ---------- live price ticker (global chrome, present on every page) ----------
@@ -950,6 +1174,7 @@ const DC = (function () {
     tradeForm.rr.value = trade.rr;
     tradeForm.pnl.value = (trade.pnl * 100).toFixed(2);
     tradeForm.strategy_id.value = trade.strategy_id != null ? trade.strategy_id : '';
+    tradeForm.account_id.value = trade.account_id != null ? trade.account_id : '';
     tradeForm.notes.value = trade.notes || '';
     tradeForm.chart_daily.value = (trade.charts.find(c => c.label === 'Daily') || {}).link || '';
     tradeForm.chart_4h.value = (trade.charts.find(c => c.label === '4H') || {}).link || '';
@@ -988,6 +1213,13 @@ const DC = (function () {
         strategies.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
     }).catch(() => {});
 
+    fetchTradingAccounts().then(accounts => {
+      const select = document.getElementById('tradeAccountSelect');
+      if (!select) return;
+      select.innerHTML = '<option value="">Unassigned</option>' +
+        accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }).catch(() => {});
+
     function closeForm() {
       modalBackdrop.classList.add('hidden');
       tradeModalState.editingId = null;
@@ -1013,6 +1245,7 @@ const DC = (function () {
         rr: num(fd.get('rr')) || 0,
         pnl: num(fd.get('pnl')) != null ? num(fd.get('pnl')) / 100 : 0,
         strategy_id: fd.get('strategy_id') || null,
+        account_id: fd.get('account_id') || null,
         notes: fd.get('notes'),
         chart_daily: fd.get('chart_daily') || null,
         chart_4h: fd.get('chart_4h') || null,
@@ -1076,9 +1309,11 @@ const DC = (function () {
   return {
     fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
-    apiSend, fetchTrades, fetchStrategies, deleteTrade,
+    apiSend, fetchTrades, fetchStrategies, fetchTradingAccounts, deleteTrade,
+    renderAccountFilter, renderAccountComparisonTable, openAccountManageModal,
     initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initMobileSidebar,
     setTheme, setContrast, getStoredTheme, getStoredContrast,
     computeDateRangeBounds, filterTradesByRange, renderDateRangeFilter, ALL_TIME_RANGE, DATE_RANGE_PRESETS, localTodayStr,
+    defaultDateRange,
   };
 })();

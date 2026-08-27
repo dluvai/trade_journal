@@ -135,7 +135,7 @@ def _mask_email(email):
     return f"{visible}{'*' * max(1, len(name) - len(visible))}@{domain}"
 
 
-REQUIRED_SIGNUP_FIELDS = ["first_name", "last_name", "username", "email"]
+REQUIRED_SIGNUP_FIELDS = ["first_name", "last_name", "username"]
 OPTIONAL_SIGNUP_FIELDS = ["country", "address_line1", "address_city", "address_postal_code", "phone"]
 
 
@@ -161,35 +161,33 @@ def signup():
         confirm_password = source.get("confirm_password") or ""
 
         if not all(fields[k] for k in REQUIRED_SIGNUP_FIELDS) or not password or not confirm_password:
-            error = "First name, last name, username, email, and password are required."
-        elif not EMAIL_RE.match(fields["email"]):
-            error = "Enter a valid email address."
+            error = "First name, last name, username, and password are required."
         elif password != confirm_password:
             error = "Passwords don't match."
         elif len(password) < 8:
             error = "Password must be at least 8 characters."
         elif db.get_user_by_username(fields["username"]):
             error = "That username is already taken."
-        elif db.get_user_by_email(fields["email"]):
-            error = "That email is already registered."
         else:
             error = _validate_profile_fields(fields)
 
         if not error:
+            # No email up front -- Resend can't deliver to arbitrary
+            # addresses until a sending domain is verified, so email is
+            # collected later from the Profile page instead of blocking
+            # signup on it. Straight to a logged-in session, no
+            # verify-email step (there's nothing to verify yet).
             user_id = db.create_user(
                 fields["username"], generate_password_hash(password),
-                fields["first_name"], fields["last_name"], fields["email"],
+                fields["first_name"], fields["last_name"], None,
                 fields["country"] or None, fields["address_line1"] or None,
                 fields["address_city"] or None, fields["address_postal_code"] or None,
                 fields["phone"] or None,
             )
-            code = auth.generate_code()
-            db.set_verification_code(user_id, auth.hash_code(code), auth.expiry_timestamp())
-            email_sender.send_verification_code(fields["email"], code)
-            session["pending_verification_user_id"] = user_id
+            session["user_id"] = user_id
             if is_json:
-                return jsonify({"ok": True, "redirect": url_for("verify_email")})
-            return redirect(url_for("verify_email"))
+                return jsonify({"ok": True, "redirect": url_for("index")})
+            return redirect(url_for("index"))
 
         if is_json:
             return jsonify({"error": error}), 400
@@ -212,7 +210,7 @@ def verify_email():
         session.pop("pending_verification_user_id", None)
         return redirect(url_for("login"))
 
-    error = ""
+    error = "Couldn't resend the code -- please try again in a moment." if request.args.get("email_error") else ""
     if request.method == "POST":
         code = (request.form.get("code") or "").strip()
         if auth.is_expired(user["verification_code_expires_at"]):
@@ -245,7 +243,8 @@ def resend_verification_code():
             if wait <= 0:
                 code = auth.generate_code()
                 db.set_verification_code(user_id, auth.hash_code(code), auth.expiry_timestamp())
-                email_sender.send_verification_code(user["email"], code)
+                if not email_sender.send_verification_code(user["email"], code):
+                    return redirect(url_for("verify_email", email_error=1))
     return redirect(url_for("verify_email"))
 
 
@@ -359,13 +358,67 @@ def profile_account():
     error = _validate_profile_fields({k: v or "" for k, v in fields.items()})
     if error:
         return jsonify({"error": error}), 400
+
+    email_changed = False
+    email_verified = None
+    if "email" in body:
+        email = (body.get("email") or "").strip() or None
+        user = db.get_user_by_id(user_id)
+        if email != user["email"]:
+            if email is not None:
+                if not EMAIL_RE.match(email):
+                    return jsonify({"error": "Enter a valid email address."}), 400
+                existing = db.get_user_by_email(email)
+                if existing and existing["id"] != user_id:
+                    return jsonify({"error": "That email is already registered."}), 400
+            db.update_email(user_id, email)
+            email_changed = True
+            email_verified = False
+
     db.update_profile_fields(user_id, fields)
     country = fields["country"]
-    return jsonify({
+    result = {
         "ok": True,
         "country_name": countries.country_name(country) if country else None,
         "country_flag": countries.flag_emoji(country) if country else "",
-    })
+    }
+    if email_changed:
+        result["email"] = email
+        result["email_verified"] = email_verified
+    return jsonify(result)
+
+
+@app.post("/profile/verify-email/request")
+def profile_verify_email_request():
+    user_id = session["user_id"]
+    user = db.get_user_by_id(user_id)
+    if not user or not user["email"]:
+        return jsonify({"error": "Add an email address first."}), 400
+    if user["email_verified"]:
+        return jsonify({"error": "That email is already verified."}), 400
+    code = auth.generate_code()
+    db.set_verification_code(user_id, auth.hash_code(code), auth.expiry_timestamp())
+    if not email_sender.send_verification_code(user["email"], code):
+        return jsonify({"error": "Couldn't send a verification email right now. Please try again shortly."}), 502
+    return jsonify({"ok": True})
+
+
+@app.post("/profile/verify-email/confirm")
+def profile_verify_email_confirm():
+    user_id = session["user_id"]
+    user = db.get_user_by_id(user_id)
+    code = ((request.get_json(force=True) or {}).get("code") or "").strip()
+    if not user or not user["verification_code_hash"]:
+        return jsonify({"error": "Request a code first."}), 400
+    if auth.is_expired(user["verification_code_expires_at"]):
+        return jsonify({"error": "That code expired. Request a new one."}), 400
+    if user["verification_attempts"] >= auth.MAX_VERIFICATION_ATTEMPTS:
+        return jsonify({"error": "Too many incorrect attempts. Request a new code."}), 400
+    if not auth.code_matches(code, user["verification_code_hash"]):
+        db.record_failed_verification_attempt(user_id)
+        return jsonify({"error": "Incorrect code."}), 400
+    db.mark_email_verified(user_id)
+    return jsonify({"ok": True})
 
 
 @app.post("/profile/avatar")
@@ -450,7 +503,7 @@ STATIC_ASSETS = {"dashboard-core.js", "dashboard-core.css"}
 REQUIRED_FIELDS = ["date"]
 ALLOWED_FIELDS = [
     "date", "session", "pair", "direction", "risk", "rr", "pnl",
-    "notes", "chart_daily", "chart_4h", "chart_30m", "strategy_id",
+    "notes", "chart_daily", "chart_4h", "chart_30m", "strategy_id", "account_id",
 ]
 
 
@@ -672,6 +725,37 @@ def api_delete_strategy(strategy_id):
 def api_assign_untagged(strategy_id):
     count = db.assign_untagged_trades(session["user_id"], strategy_id)
     return jsonify({"count": count})
+
+
+@app.get("/api/trading-accounts")
+def api_list_trading_accounts():
+    return jsonify(db.list_trading_accounts(session["user_id"]))
+
+
+@app.post("/api/trading-accounts")
+def api_create_trading_account():
+    body = request.get_json(force=True)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    new_id = db.create_trading_account(session["user_id"], name)
+    return jsonify({"id": new_id}), 201
+
+
+@app.put("/api/trading-accounts/<int:account_id>")
+def api_update_trading_account(account_id):
+    body = request.get_json(force=True)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    db.update_trading_account(session["user_id"], account_id, name)
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/trading-accounts/<int:account_id>")
+def api_delete_trading_account(account_id):
+    db.delete_trading_account(session["user_id"], account_id)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/macro")

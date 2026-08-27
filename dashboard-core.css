@@ -33,15 +33,22 @@
   --muted-fill:     #3a4048;
   --warn:           #e2b34a;
   --shadow:         0 1px 0 rgba(238,241,244,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.65);
-  /* Single-hue sheen derived from --series-1 (lighter top-left, truer
-     middle, darker bottom-right) -- reused wherever the accent needs
-     gradient depth (buttons, active nav, badges) instead of a flat fill.
-     Auto-adapts per theme since it only ever mixes the current --series-1
-     with white/black, never a hardcoded color. */
-  --accent-gradient: linear-gradient(135deg,
-    color-mix(in srgb, var(--series-1) 90%, white) 0%,
-    var(--series-1) 55%,
-    color-mix(in srgb, var(--series-1) 85%, black) 100%);
+  /* Fixed 3-stop yellow-blue-green sheen -- reused wherever the accent
+     needs gradient depth (buttons, active nav, badges) instead of a flat
+     fill. Deliberately the SAME hex stops in both themes (not derived from
+     --series-1 like the old single-hue version) since this is meant to read
+     as one consistent brand gradient regardless of light/dark. */
+  --accent-gradient: linear-gradient(135deg, #f4c95d 0%, #4c8bf5 50%, #38c98f 100%);
+  /* Translucent card surface, derived from --surface-1 (auto-adapts per
+     theme) -- lets the page's diagonal gradient bleed through panels/tiles
+     just enough that cards read as part of the same surface instead of
+     flat opaque blocks sitting on top of it. */
+  --surface-1-glass: color-mix(in srgb, var(--surface-1) 74%, transparent);
+  /* Diagonal page-background wash, top-left to bottom-right -- IS
+     theme-sensitive (needs its own light/dark stops), so it's redefined in
+     every theme block below alongside --page. */
+  --page-gradient-start: #0a0d12;
+  --page-gradient-end:   #122a4a;
 }
 @media (prefers-color-scheme: light) {
   :root {
@@ -64,6 +71,8 @@
     --muted-fill:     #dcd7cd;
     --warn:           #a9791a;
     --shadow:         0 1px 2px rgba(18,22,28,0.05), 0 10px 24px -16px rgba(18,22,28,0.16);
+    --page-gradient-start: #eef4fc;
+    --page-gradient-end:   #cfe0f7;
   }
 }
 /* Manual theme override (profile page toggle, persisted via localStorage) --
@@ -91,6 +100,8 @@
   --muted-fill:     #dcd7cd;
   --warn:           #a9791a;
   --shadow:         0 1px 2px rgba(18,22,28,0.05), 0 10px 24px -16px rgba(18,22,28,0.16);
+  --page-gradient-start: #eef4fc;
+  --page-gradient-end:   #cfe0f7;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -112,6 +123,8 @@
   --muted-fill:     #3a4048;
   --warn:           #e2b34a;
   --shadow:         0 1px 0 rgba(238,241,244,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.65);
+  --page-gradient-start: #0a0d12;
+  --page-gradient-end:   #122a4a;
 }
 /* High-contrast: relative adjustments off whatever theme is already
    active, same color-mix technique as --accent-gradient above -- avoids
@@ -136,7 +149,11 @@ html, body {
   color: var(--text-primary);
   font-family: var(--font-ui);
 }
-body { padding: 24px 28px 60px; }
+body {
+  padding: 24px 28px 60px;
+  background: linear-gradient(135deg, var(--page-gradient-start), var(--page-gradient-end));
+  background-attachment: fixed;
+}
 .wrap { width: 100%; }
 
 header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
@@ -163,6 +180,52 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
   border: 1px solid var(--series-1); background: var(--accent-gradient); color: #fff;
   font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer;
 }
+.account-filter { position: relative; display: inline-block; }
+.account-filter-trigger {
+  display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono);
+}
+.account-filter-trigger .account-filter-label {
+  max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.account-filter-trigger[aria-expanded="true"] { border-color: var(--series-1); color: var(--text-primary); }
+.account-filter-trigger:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.account-filter-caret {
+  font-size: 9px; color: var(--text-muted); display: inline-block; transition: transform .16s ease;
+}
+.account-filter-trigger[aria-expanded="true"] .account-filter-caret { transform: rotate(180deg); color: var(--series-1); }
+.account-filter-popover {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 216px;
+  background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 10px;
+  box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; gap: 1px;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transform-origin: top right; transform: translateY(-4px) scale(.98);
+  transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
+}
+.account-filter.is-open .account-filter-popover {
+  opacity: 1; visibility: visible; pointer-events: auto; transform: none;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.account-filter-option {
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px;
+  font-size: 12.5px; color: var(--text-secondary); cursor: pointer;
+}
+.account-filter-option:hover { background: var(--surface-2); color: var(--text-primary); }
+.account-filter-option input {
+  width: 14px; height: 14px; margin: 0; accent-color: var(--series-1); flex: none;
+}
+.account-filter-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-filter-all { font-weight: 650; color: var(--text-primary); }
+.account-filter-divider { height: 1px; background: var(--border); margin: 5px 3px; }
+.account-filter-manage {
+  font-size: 12px; font-weight: 600; color: var(--series-1); text-decoration: none;
+  padding: 7px 9px; border-radius: 6px;
+}
+.account-filter-manage:hover { background: var(--surface-2); }
+.account-manage-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.account-manage-row:last-child { border-bottom: none; }
 .iconbtn {
   border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary);
   font-family: var(--font-ui); font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer;
@@ -192,14 +255,30 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
    space in the last row. A gradient or divider-gap trick there would make
    that leftover space look like a visibly different, mismatched block;
    a single flat color makes it disappear instead. */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 18px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow); }
-.tile { background: var(--surface-1); padding: 14px 16px; }
+.tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 10px;
+  background: var(--surface-1-glass); backdrop-filter: blur(14px) saturate(1.15); -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow);
+}
+.tile { background: var(--surface-1-glass); padding: 14px 16px; }
 .tile .label { font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
 .tile .value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 21px; font-weight: 600; margin-top: 7px; }
 .tile .value.good { color: var(--good); }
 .tile .value.critical { color: var(--critical); }
 
-.panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px; padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
+.panel {
+  background: var(--surface-1-glass); backdrop-filter: blur(14px) saturate(1.15); -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  border: 1px solid var(--border); border-radius: 9px; padding: 18px 20px; margin-bottom: 10px; box-shadow: var(--shadow);
+}
+/* A lone right-aligned control (date filter) that governs the card right
+   below it, but must never read as glued to it -- deliberately more
+   breathing room underneath than the standard inter-card gap (10px) above,
+   so the eye registers it as sitting IN the gap, not as that card's own
+   header peeking out above its border. */
+.panel-controls-row { display: flex; justify-content: flex-end; margin: 0 0 16px; }
+/* Flags this card as a distinct insight, not just another data panel --
+   same "colored left edge = category marker" convention as .bw-card. */
+#accountComparePanel { border-left: 3px solid var(--series-1); }
 .panel h2 { font-size: 13px; margin: 0 0 14px; font-weight: 650; letter-spacing: .01em; }
 .panel h2 .n { color: var(--text-muted); font-weight: 500; font-family: var(--font-mono); }
 

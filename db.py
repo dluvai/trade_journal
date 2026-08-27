@@ -50,6 +50,13 @@ SCHEMA_STATEMENTS = [
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""",
+    """CREATE TABLE IF NOT EXISTS trading_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
 ]
 
 MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
@@ -95,6 +102,15 @@ def _migrate_trades_strategy_column(conn):
         # column existed -- or one that's just discretionary, no formal
         # setup -- has no strategy to point at. NULL means exactly that.
         conn.execute("ALTER TABLE trades ADD COLUMN strategy_id INTEGER")
+
+
+def _migrate_trades_account_column(conn):
+    # Same rationale as strategy_id above -- trading_accounts is a brand new
+    # table (no existing rows to reconcile), but trades already has data, so
+    # the column linking a trade to an account still needs an ALTER TABLE.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)").rows}
+    if "account_id" not in existing:
+        conn.execute("ALTER TABLE trades ADD COLUMN account_id INTEGER")
 
 
 def _migrate_user_id_columns(conn):
@@ -173,6 +189,7 @@ def _ensure_schema(conn):
         conn.execute(stmt)
     _migrate_macro_prev_columns(conn)
     _migrate_trades_strategy_column(conn)
+    _migrate_trades_account_column(conn)
     _migrate_user_id_columns(conn)
     _migrate_user_profile_columns(conn)
     _migrate_user_extended_profile_columns(conn)
@@ -242,6 +259,7 @@ def row_to_dict(row):
             charts.append({"label": label, "link": link, "img": snapshot_image_url(link)})
     d["charts"] = charts
     d["strategy_name"] = d.get("strategy_name") or "No strategy"
+    d["account_name"] = d.get("account_name") or "Unassigned"
     return d
 
 
@@ -259,8 +277,10 @@ def snapshot_image_url(tv_link):
 def list_trades(user_id):
     conn = get_conn()
     rows = conn.execute("""
-        SELECT trades.*, strategies.name AS strategy_name
-        FROM trades LEFT JOIN strategies ON strategies.id = trades.strategy_id
+        SELECT trades.*, strategies.name AS strategy_name, trading_accounts.name AS account_name
+        FROM trades
+        LEFT JOIN strategies ON strategies.id = trades.strategy_id
+        LEFT JOIN trading_accounts ON trading_accounts.id = trades.account_id
         WHERE trades.user_id = ?
         ORDER BY trades.date ASC, trades.id ASC
     """, (user_id,)).rows
@@ -272,6 +292,11 @@ def _strategy_id_or_none(fields):
     return int(raw) if raw not in (None, "") else None
 
 
+def _account_id_or_none(fields):
+    raw = fields.get("account_id")
+    return int(raw) if raw not in (None, "") else None
+
+
 def insert_trade(user_id, fields):
     now = datetime.now().isoformat(timespec="seconds")
     pnl = float(fields.get("pnl") or 0)
@@ -279,14 +304,14 @@ def insert_trade(user_id, fields):
     conn = get_conn()
     rs = conn.execute(
         """INSERT INTO trades (date, session, pair, direction, risk, rr, pnl, result, notes,
-                                chart_daily, chart_4h, chart_30m, strategy_id, user_id, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                chart_daily, chart_4h, chart_30m, strategy_id, account_id, user_id, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), user_id, now, now,
+            _strategy_id_or_none(fields), _account_id_or_none(fields), user_id, now, now,
         ),
     )
     new_id = rs.last_insert_rowid
@@ -300,14 +325,14 @@ def update_trade(user_id, trade_id, fields):
     conn = get_conn()
     conn.execute(
         """UPDATE trades SET date=?, session=?, pair=?, direction=?, risk=?, rr=?, pnl=?, result=?,
-               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, strategy_id=?, updated_at=?
+               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, strategy_id=?, account_id=?, updated_at=?
            WHERE id=? AND user_id=?""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), now, trade_id, user_id,
+            _strategy_id_or_none(fields), _account_id_or_none(fields), now, trade_id, user_id,
         ),
     )
 
@@ -364,6 +389,40 @@ def update_strategy(user_id, strategy_id, name, description):
         "UPDATE strategies SET name=?, description=?, updated_at=? WHERE id=? AND user_id=?",
         (name, description, now, strategy_id, user_id),
     )
+
+
+# ---------- trading accounts (per-user) ----------
+
+def list_trading_accounts(user_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM trading_accounts WHERE user_id=? ORDER BY created_at ASC", (user_id,)
+    ).rows
+    return [r.asdict() for r in rows]
+
+
+def create_trading_account(user_id, name):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    rs = conn.execute(
+        "INSERT INTO trading_accounts (name, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        (name, user_id, now, now),
+    )
+    return rs.last_insert_rowid
+
+
+def update_trading_account(user_id, account_id, name):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    conn.execute(
+        "UPDATE trading_accounts SET name=?, updated_at=? WHERE id=? AND user_id=?",
+        (name, now, account_id, user_id),
+    )
+
+
+def delete_trading_account(user_id, account_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM trading_accounts WHERE id=? AND user_id=?", (account_id, user_id))
 
 
 def assign_untagged_trades(user_id, strategy_id):
@@ -494,6 +553,25 @@ def create_user(username, password_hash, first_name=None, last_name=None, email=
     )
     new_id = rs.last_insert_rowid
     return new_id
+
+
+def delete_user(user_id):
+    # Only ever called on a just-created, still-unverified signup that we're
+    # rolling back (e.g. its verification email failed to send) -- a fresh
+    # user has no trades/strategies yet, so this is a plain single-row delete.
+    conn = get_conn()
+    conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+
+def update_email(user_id, email):
+    # Changing the email always resets verification -- a new address is
+    # unverified by definition, and any in-flight code was for the old one.
+    conn = get_conn()
+    conn.execute(
+        """UPDATE users SET email=?, email_verified=0, verification_code_hash=NULL,
+               verification_code_expires_at=NULL, verification_attempts=0 WHERE id=?""",
+        (email, user_id),
+    )
 
 
 def update_profile_fields(user_id, fields):

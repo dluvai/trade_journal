@@ -80,8 +80,6 @@ SIGNUP_PAGE = """<form method="post" id="signupForm" novalidate>
   <div class="error" id="err_last_name" style="display:none;">Last name is required.</div>
   <input type="text" name="username" placeholder="Username" value="{username}" autocapitalize="off" required>
   <div class="error" id="err_username" style="display:none;">Username is required.</div>
-  <input type="email" name="email" placeholder="Email" value="{email}" autocapitalize="off" required>
-  <div class="error" id="err_email" style="display:none;">Enter a valid email address.</div>
   <select name="country" id="signupCountry">{country_options}</select>
   <div id="signupAddressFields" style="display:none;">
     <input type="text" name="address_line1" placeholder="Street address" value="{address_line1}">
@@ -113,7 +111,6 @@ SIGNUP_PAGE = """<form method="post" id="signupForm" novalidate>
     first_name: document.getElementById('err_first_name'),
     last_name: document.getElementById('err_last_name'),
     username: document.getElementById('err_username'),
-    email: document.getElementById('err_email'),
     password: document.getElementById('err_password'),
     confirm_password: document.getElementById('err_confirm_password'),
   }};
@@ -130,27 +127,21 @@ SIGNUP_PAGE = """<form method="post" id="signupForm" novalidate>
     }}
   }}
 
-  var EMAIL_RE = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;
-
-  // Real-time feedback as you type, no round trip -- password match and
-  // email shape are the two checks genuinely instant to do client-side.
+  // Real-time feedback as you type, no round trip -- password match is the
+  // one check genuinely instant to do client-side.
   function checkMatch() {{
     var mismatch = form.confirm_password.value && form.password.value !== form.confirm_password.value;
     errEls.confirm_password.style.display = mismatch ? 'block' : 'none';
   }}
   form.password.addEventListener('input', checkMatch);
   form.confirm_password.addEventListener('input', checkMatch);
-  form.email.addEventListener('input', function() {{
-    errEls.email.style.display = (form.email.value && !EMAIL_RE.test(form.email.value)) ? 'block' : 'none';
-  }});
 
   function validate() {{
     clearErrors();
     var ok = true;
-    ['first_name', 'last_name', 'username', 'email'].forEach(function(name) {{
+    ['first_name', 'last_name', 'username'].forEach(function(name) {{
       if (!form[name].value.trim()) {{ showError(name); ok = false; }}
     }});
-    if (form.email.value.trim() && !EMAIL_RE.test(form.email.value.trim())) {{ showError('email'); ok = false; }}
     if (!form.password.value) {{ showError('password', 'Password is required.'); ok = false; }}
     else if (form.password.value.length < 8) {{ showError('password'); ok = false; }}
     if (!form.confirm_password.value) {{ showError('confirm_password', 'Confirm your password.'); ok = false; }}
@@ -177,7 +168,6 @@ SIGNUP_PAGE = """<form method="post" id="signupForm" novalidate>
           // when we can tell, instead of always dumping it at the top.
           var msg = res.data.error || 'Something went wrong -- try again.';
           if (/username/i.test(msg)) showError('username', msg);
-          else if (/email/i.test(msg)) showError('email', msg);
           else if (/password/i.test(msg)) showError('confirm_password', msg);
           else showError(null, msg);
           submitBtn.disabled = false;
