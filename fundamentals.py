@@ -15,6 +15,7 @@ METRIC_LABELS = {
     "cpi_mom": "CPI (MoM inflation)",
     "core_cpi_yoy": "Core CPI (YoY)",
     "core_ppi_yoy": "Core PPI (YoY)",
+    "ppi_yoy": "PPI (YoY)",
     "core_pce_yoy": "Core PCE (YoY)",
     "core_pce_mom": "Core PCE (MoM)",
     "employment_change": "Employment change",
@@ -63,6 +64,11 @@ METRIC_EXPLAINERS = {
         "Pipeline inflation at the producer level -- rising producer costs often get passed "
         "through to consumer prices later, making this a leading indicator for future CPI."
     ),
+    "ppi_yoy": (
+        "The headline producer price index -- unlike core_ppi_yoy (a US-specific ex-food-and-"
+        "energy construct), this is the all-items producer price gauge most other countries "
+        "actually publish, and is scored the same way: a leading indicator for future CPI."
+    ),
     "core_pce_yoy": (
         "The Fed's own preferred inflation gauge, distinct from CPI -- weighted differently and "
         "adjusted for consumers substituting cheaper goods, which the Fed considers a more "
@@ -108,6 +114,7 @@ SCORED_METRICS = [
     ("cpi_mom", True),
     ("core_cpi_yoy", True),
     ("core_ppi_yoy", True),
+    ("ppi_yoy", True),
     ("core_pce_yoy", True),
     ("core_pce_mom", True),
     ("employment_change", True),

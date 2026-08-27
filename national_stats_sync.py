@@ -39,22 +39,93 @@ Covers two metric families:
   Monthly (period on period growth)", the exact figure ONS's own monthly
   GDP bulletins headline as UK growth for the month. ~2 month lag.
 
+  ppi_yoy (headline producer price index, YoY) -- deliberately a separate
+  metric from core_ppi_yoy, not the same field: core_ppi_yoy is a US-
+  specific ex-food-and-energy construct (FRED's PPIFES), while what's
+  fetched here for GBP/CAD/AUD is each country's plain all-items PPI --
+  putting a different concept into the "core" field would be the same
+  class of mistake as an earlier bug this app already had and fixed
+  (USD's interest_rate briefly pointed at the wrong FRED series).
+    - CAD: StatCan WDS. Vector 1230995983 is the Industrial Product Price
+      Index total (table 18-10-0265), an index level -- YoY computed here
+      the same way fred_sync.py does for any other index series. ~1 month
+      lag.
+    - AUD: ABS's PPI dataflow, oddly, only carries the SDMX API's live
+      data down to Manufacturing-division granularity, not the true
+      economy-wide headline (checked and confirmed: MEASURE=3,
+      TYPE=OUTPUT,FREQ=Q lists just 4 index codes, all sub-national-
+      total). The real headline -- "Final Demand" -- isn't exposed there
+      at all; it only exists in ABS's downloadable release table (catalog
+      6427.0, table 1), so this fetches that XLSX directly from the
+      "latest-release" page (URL path changes every quarter, so the page
+      is scraped for the current link each sync) and reads the column
+      matching "Final ; Total (Source)" by its own header text -- not a
+      hardcoded Series ID, since ABS revises those. ~1 quarter lag.
+    - GBP: ONS's timeseries API. Series GB7S is Output PPI (domestic,
+      manufactured products) as an index level -- YoY computed the same
+      way as CAD's. ~1 month lag.
+
+  retail_sales_yoy for GBP and CAD -- same concept as USD's existing
+  FRED-sourced figure (RSAFS), just from each country's own source since
+  neither FRED nor OECD carry it for these two.
+    - CAD: StatCan WDS. Vector 1446859483 is total retail sales (SA,
+      table 20-10-0056), a dollar level -- YoY computed the same way as
+      the PPI vector above. ~1 month lag.
+    - GBP: ONS's timeseries API. Series J5EB is already ONS's own
+      published YoY figure ("% change on same month a year ago") for
+      volume-terms retail sales including fuel -- no computation needed,
+      taken as-is. ~1 month lag.
+
 Run standalone to see exactly what it would fetch:
     python national_stats_sync.py
 """
 import json
+import re
 import urllib.request
 
 import db
 
 STATCAN_VECTOR_ID = 2062811  # Canada; Employment; Total; 15 years and over; SA
+STATCAN_PPI_VECTOR_ID = 1230995983  # Canada; Total, Industrial product price index (IPPI)
+STATCAN_RETAIL_VECTOR_ID = 1446859483  # Canada; Retail trade; Total retail sales; SA
 ABS_LF_URL = "https://data.api.abs.gov.au/rest/data/ABS,LF,1.0.0/M3.3.1599.20.AUS.M?dimensionAtObservation=AllDimensions&startPeriod={start}"
+ABS_PPI_LATEST_RELEASE_URL = "https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/producer-price-indexes-australia/latest-release"
 ONS_MGRZ_URL = "https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/timeseries/mgrz/lms/data?format=json"
 ONS_ECYX_URL = "https://www.ons.gov.uk/economy/grossdomesticproductgdp/timeseries/ecyx/mgdp/data?format=json"
+ONS_GB7S_URL = "https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/gb7s/ppi/data?format=json"
+ONS_J5EB_URL = "https://www.ons.gov.uk/businessindustryandtrade/retailindustry/timeseries/j5eb/drsi/data?format=json"
 
 METRIC_NOTES = {
     ("GBP", "employment_change"): "3-month change vs. the prior 3 months (ONS's own headline convention), not a literal month-over-month diff -- the underlying LFS survey is too noisy for that.",
+    ("AUD", "ppi_yoy"): "ABS 'Final Demand' PPI -- pulled from their release table directly since it isn't exposed on their SDMX API.",
 }
+
+
+def _statcan_vector_yoy(vector_id):
+    url = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAndLatestNPeriods"
+    payload = [{"vectorId": vector_id, "latestN": 13}]
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"),
+        headers={"User-Agent": "curl/8.0", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    points = data[0]["object"]["vectorDataPoint"]
+    if len(points) < 13:
+        return None, None
+    year_ago, latest = points[0], points[-1]
+    return latest["refPer"][:7], round((latest["value"] / year_ago["value"] - 1) * 100, 2)
+
+
+def _ons_index_yoy(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    months = data.get("months", [])
+    if len(months) < 13:
+        return None, None
+    year_ago, latest = months[-13], months[-1]
+    return latest["date"], round((float(latest["value"]) / float(year_ago["value"]) - 1) * 100, 2)
 
 
 def _fetch_cad_employment():
@@ -125,10 +196,68 @@ def _fetch_gbp_gdp_mom():
     return latest["date"], round(float(latest["value"]), 2)
 
 
+def _fetch_cad_ppi():
+    return _statcan_vector_yoy(STATCAN_PPI_VECTOR_ID)
+
+
+def _fetch_cad_retail():
+    return _statcan_vector_yoy(STATCAN_RETAIL_VECTOR_ID)
+
+
+def _fetch_gbp_ppi():
+    return _ons_index_yoy(ONS_GB7S_URL)
+
+
+def _fetch_gbp_retail():
+    req = urllib.request.Request(ONS_J5EB_URL, headers={"User-Agent": "curl/8.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    months = data.get("months", [])
+    if not months:
+        return None, None
+    latest = months[-1]
+    return latest["date"], round(float(latest["value"]), 2)
+
+
+def _fetch_aud_ppi():
+    req = urllib.request.Request(
+        ABS_PPI_LATEST_RELEASE_URL,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        html = resp.read().decode("utf-8", errors="replace")
+    match = re.search(r'href="([^"]+/642701\.xlsx)"', html)
+    if not match:
+        return None, None
+    xlsx_url = "https://www.abs.gov.au" + match.group(1)
+    req2 = urllib.request.Request(
+        xlsx_url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"},
+    )
+    with urllib.request.urlopen(req2, timeout=20) as resp:
+        raw = resp.read()
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+    ws = wb["Data1"]
+    rows = list(ws.iter_rows(values_only=True))
+    header = rows[0]
+    col = next((i for i, h in enumerate(header) if h and "corresponding quarter of previous year" in h.lower() and "final" in h.lower() and "total (source)" in h.lower()), None)
+    if col is None:
+        return None, None
+    as_of, value = None, None
+    for row in rows[10:]:
+        if row[0] is not None and row[col] is not None:
+            as_of, value = row[0], row[col]
+    return (as_of.strftime("%Y-%m-%d") if as_of else None), (round(float(value), 2) if value is not None else None)
+
+
 # metric -> {currency: fetch_fn}
 FETCHERS = {
     "employment_change": {"CAD": _fetch_cad_employment, "AUD": _fetch_aud_employment, "GBP": _fetch_gbp_employment},
     "gdp_mom": {"GBP": _fetch_gbp_gdp_mom},
+    "ppi_yoy": {"CAD": _fetch_cad_ppi, "AUD": _fetch_aud_ppi, "GBP": _fetch_gbp_ppi},
+    "retail_sales_yoy": {"CAD": _fetch_cad_retail, "GBP": _fetch_gbp_retail},
 }
 
 
