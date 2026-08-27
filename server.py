@@ -639,6 +639,16 @@ def api_create_strategy():
     return jsonify({"id": new_id}), 201
 
 
+@app.put("/api/strategies/<int:strategy_id>")
+def api_update_strategy(strategy_id):
+    body = request.get_json(force=True)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    db.update_strategy(session["user_id"], strategy_id, name, body.get("description") or "")
+    return jsonify({"ok": True})
+
+
 @app.delete("/api/strategies/<int:strategy_id>")
 def api_delete_strategy(strategy_id):
     db.delete_strategy(session["user_id"], strategy_id)

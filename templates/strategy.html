@@ -16,7 +16,7 @@
 {% block modals %}
 <div class="modal-backdrop hidden" id="strategyModalBackdrop">
   <div class="modal">
-    <h2>Create Strategy</h2>
+    <h2 id="strategyFormTitle">Create Strategy</h2>
     <form id="strategyForm">
       <div class="field" style="margin-bottom:12px;">
         <label>Name</label>
@@ -58,7 +58,10 @@ function renderStrategiesList(list) {
     <div class="panel" style="margin-bottom:12px;">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
         <h2 style="margin:0;">${s.name}</h2>
-        <button class="iconbtn small danger" data-delete-strategy="${s.id}">Delete</button>
+        <div class="form-actions" style="margin:0;">
+          <button class="iconbtn small" data-edit-strategy="${s.id}">Edit</button>
+          <button class="iconbtn small danger" data-delete-strategy="${s.id}">Delete</button>
+        </div>
       </div>
       <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.65; white-space:pre-wrap; margin-top:10px;">${s.description || '<em>No details written.</em>'}</div>
     </div>`).join('');
@@ -67,6 +70,12 @@ function renderStrategiesList(list) {
       if (!confirm('Delete this strategy?')) return;
       await DC.apiSend('DELETE', `/api/strategies/${btn.dataset.deleteStrategy}`, {});
       loadStrategies();
+    });
+  });
+  host.querySelectorAll('[data-edit-strategy]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const strategy = ALL_STRATEGIES.find(s => String(s.id) === btn.dataset.editStrategy);
+      if (strategy) openStrategyForm(strategy);
     });
   });
 }
@@ -80,12 +89,22 @@ async function loadStrategies() {
 const strategyModalBackdrop = document.getElementById('strategyModalBackdrop');
 const strategyForm = document.getElementById('strategyForm');
 const strategyFormError = document.getElementById('strategyFormError');
+const strategyFormTitle = document.getElementById('strategyFormTitle');
+let editingStrategyId = null;
 
-document.getElementById('createStrategyBtn').addEventListener('click', () => {
+function openStrategyForm(strategy) {
+  editingStrategyId = strategy ? strategy.id : null;
   strategyForm.reset();
   strategyFormError.textContent = '';
+  strategyFormTitle.textContent = strategy ? 'Edit Strategy' : 'Create Strategy';
+  if (strategy) {
+    strategyForm.elements.name.value = strategy.name;
+    strategyForm.elements.description.value = strategy.description || '';
+  }
   strategyModalBackdrop.classList.remove('hidden');
-});
+}
+
+document.getElementById('createStrategyBtn').addEventListener('click', () => openStrategyForm(null));
 document.getElementById('cancelStrategyForm').addEventListener('click', () => strategyModalBackdrop.classList.add('hidden'));
 strategyModalBackdrop.addEventListener('click', (e) => { if (e.target === strategyModalBackdrop) strategyModalBackdrop.classList.add('hidden'); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !strategyModalBackdrop.classList.contains('hidden')) strategyModalBackdrop.classList.add('hidden'); });
@@ -93,8 +112,13 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !strateg
 strategyForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(strategyForm);
+  const payload = { name: fd.get('name'), description: fd.get('description') };
   try {
-    await DC.apiSend('POST', '/api/strategies', { name: fd.get('name'), description: fd.get('description') });
+    if (editingStrategyId) {
+      await DC.apiSend('PUT', `/api/strategies/${editingStrategyId}`, payload);
+    } else {
+      await DC.apiSend('POST', '/api/strategies', payload);
+    }
     strategyModalBackdrop.classList.add('hidden');
     loadStrategies();
   } catch (err) {

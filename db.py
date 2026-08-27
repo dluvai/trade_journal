@@ -357,6 +357,15 @@ def delete_strategy(user_id, strategy_id):
     conn.execute("DELETE FROM strategies WHERE id=? AND user_id=?", (strategy_id, user_id))
 
 
+def update_strategy(user_id, strategy_id, name, description):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    conn.execute(
+        "UPDATE strategies SET name=?, description=?, updated_at=? WHERE id=? AND user_id=?",
+        (name, description, now, strategy_id, user_id),
+    )
+
+
 # ---------- macro snapshot (global, shared by every user) ----------
 
 # Same global data read by every user on every Macros-page load (often
