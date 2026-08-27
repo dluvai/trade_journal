@@ -12,7 +12,7 @@ import fred_calendar
 import rate_calendar
 
 
-def upcoming_events(days_ahead=14):
+def upcoming_events(days_ahead=7):
     events = fred_calendar.upcoming_events(days_ahead) + rate_calendar.upcoming_events(days_ahead)
     events.sort(key=lambda e: (e["date"], e["currency"]))
     return events
