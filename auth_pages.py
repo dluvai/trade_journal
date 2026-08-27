@@ -83,14 +83,14 @@ _STYLE = """
     box-shadow:0 10px 26px -8px rgba(59,130,246,0.55);}
   .auth-art-inner h2{font-size:46px;margin:0;letter-spacing:-0.01em;line-height:1;}
   .auth-art-inner p{font-size:14px;color:#a3a0a6;margin:0;}
-  .auth-form-col{flex:1;display:flex;align-items:center;justify-content:flex-end;padding:24px 64px;box-sizing:border-box;}
+  .auth-form-col{flex:1;display:flex;align-items:center;justify-content:center;padding:24px 64px;box-sizing:border-box;}
   /* "Liquid glass": very translucent + heavily blurred/saturated so the
      grid texture and blue glow behind visibly bleed through, plus a
      diagonal light sheen (::before) so it reads as glass, not a tinted
      panel -- same treatment used for the journal-demo cards below. */
   .card{position:relative;background:rgba(28,27,31,0.4);
     backdrop-filter:blur(30px) saturate(1.7);-webkit-backdrop-filter:blur(30px) saturate(1.7);
-    border:1px solid rgba(245,244,242,0.16);border-radius:16px;padding:32px 28px;width:300px;max-width:100%;
+    border:1px solid rgba(245,244,242,0.16);border-radius:16px;padding:30px 40px;width:420px;max-width:100%;
     box-sizing:border-box;box-shadow:0 24px 56px -24px rgba(0,0,0,0.7), inset 1px 0 0 rgba(255,255,255,0.06);
     overflow:hidden;}
   .card::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
