@@ -1,8 +1,9 @@
 """
 Unified macro-data sync: dispatches each (currency, metric) job to whichever
-of fred_sync.py, oecd_sync.py, or employment_sync.py is the better source,
-then does one merged db.upsert_macro() write per currency -- never
-independent passes racing each other.
+of fred_sync.py, oecd_sync.py, employment_sync.py, or
+central_bank_rates.py is the better source, then does one merged
+db.upsert_macro() write per currency -- never independent passes racing
+each other.
 
 Why one dispatch table instead of calling fred_sync.sync() then
 oecd_sync.sync() back to back: auto_sync.py's per-event poller diffs a
@@ -25,6 +26,7 @@ and why.
 Run standalone to see exactly what it would fetch, and from where:
     python macro_sync.py
 """
+import central_bank_rates
 import employment_sync
 import fred_sync
 import oecd_sync
@@ -48,6 +50,13 @@ OECD_ROUTED = {
 # still comes from fred_sync (nonfarm payrolls).
 EMPLOYMENT_ROUTED = {("CAD", "employment_change"), ("AUD", "employment_change"), ("GBP", "employment_change")}
 
+# interest_rate for every currency whose own central bank publishes it
+# directly -- see central_bank_rates.py's docstring for the exact source
+# per currency. USD and EUR are untouched: fred_sync's entries for both are
+# already the literal rate (DFEDTARU, ECBDFR), not a proxy, so there's
+# nothing for this router to improve on there.
+CENTRAL_BANK_ROUTED = {(ccy, "interest_rate") for ccy in central_bank_rates.FETCHERS}
+
 
 def sync(currencies=None, dry_run=False):
     """Pull the covered metrics for each currency from whichever source is
@@ -65,13 +74,14 @@ def sync(currencies=None, dry_run=False):
     fred_report = fred_sync.sync(currencies=currencies, dry_run=True)
     oecd_report = oecd_sync.sync(currencies=currencies, dry_run=True)
     employment_report = employment_sync.sync(currencies=currencies, dry_run=True)
+    rates_report = central_bank_rates.sync(currencies=currencies, dry_run=True)
 
     report = {ccy: {} for ccy in currencies}
     fetched_by_ccy = {ccy: {} for ccy in currencies}
 
     for ccy in currencies:
         for metric in fred_sync.SERIES.get(ccy, {}):
-            if (ccy, metric) in OECD_ROUTED:
+            if (ccy, metric) in OECD_ROUTED or (ccy, metric) in CENTRAL_BANK_ROUTED:
                 continue
             entry = fred_report.get(ccy, {}).get(metric)
             if not entry:
@@ -99,6 +109,14 @@ def sync(currencies=None, dry_run=False):
                 report[ccy]["employment_change"] = entry
                 if entry.get("error") is None and entry.get("value") is not None:
                     fetched_by_ccy[ccy]["employment_change"] = entry["value"]
+
+        if (ccy, "interest_rate") in CENTRAL_BANK_ROUTED:
+            entry = rates_report.get(ccy)
+            if entry:
+                entry = dict(entry, source="central_bank")
+                report[ccy]["interest_rate"] = entry
+                if entry.get("error") is None and entry.get("value") is not None:
+                    fetched_by_ccy[ccy]["interest_rate"] = entry["value"]
 
     if not dry_run:
         for ccy in currencies:
