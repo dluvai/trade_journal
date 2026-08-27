@@ -208,9 +208,14 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 @media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
 
 /* iframe embeds report height:100% against whatever we give the wrapper --
-   without an explicit height here the Myfxbook calendar collapses to 0px. */
-.calendar-embed { height: calc(100vh - 200px); min-height: 520px; }
-.calendar-embed iframe { display: block; }
+   without an explicit height here the Myfxbook calendar collapses to 0px.
+   Myfxbook's widget only renders light (no dark-mode param, and a CSS
+   invert() filter distorts the flag icons' real colors -- tried it, looked
+   worse) -- framed as a light card instead of forced dark so it reads as
+   deliberate inset content rather than a theming bug. */
+.calendar-embed { height: calc(100vh - 200px); min-height: 520px;
+  background: #fff; border-radius: 8px; padding: 8px; box-sizing: border-box; }
+.calendar-embed iframe { display: block; border-radius: 4px; }
 @media (max-width: 640px) { .calendar-embed { height: calc(100vh - 260px); min-height: 420px; } }
 
 svg { display: block; width: 100%; height: auto; overflow: visible; }
