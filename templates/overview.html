@@ -11,37 +11,46 @@
   <h2>Account Comparison</h2>
   <div id="accountCompareTable"></div>
 </div>
-<div class="panel">
-  <h2>Equity Curve</h2>
-  <div id="equityChart"></div>
+<div class="grid2">
+  <div class="panel">
+    <h2>Equity Curve</h2>
+    <div id="equityChart"></div>
+  </div>
+  <div class="panel">
+    <h2>Win / Loss / Breakeven</h2>
+    <div id="donutChart"></div>
+  </div>
 </div>
-<div class="panel">
-  <h2>Win / Loss / Breakeven</h2>
-  <div id="donutChart"></div>
+<div class="chart-grid">
+  <div class="panel">
+    <h2>Win Rate by Day of Week</h2>
+    <div id="dayChart"></div>
+  </div>
+  <div class="panel">
+    <h2>Win Rate by Session</h2>
+    <div id="sessionChart"></div>
+  </div>
+  <div class="panel">
+    <div class="workspace-head">
+      <h2>Monthly Return</h2>
+      <div id="monthlyReturnYearFilter"></div>
+    </div>
+    <div id="monthChart"></div>
+  </div>
+  <div class="panel">
+    <h2>RR Distribution</h2>
+    <div id="rrHistogram"></div>
+  </div>
 </div>
-<div class="panel">
-  <h2>Win Rate by Day of Week</h2>
-  <div id="dayChart"></div>
-</div>
-<div class="panel">
-  <h2>Win Rate by Session</h2>
-  <div id="sessionChart"></div>
-</div>
-<div class="panel">
-  <h2>Monthly Return</h2>
-  <div id="monthChart"></div>
-</div>
-<div class="panel">
-  <h2>RR Distribution</h2>
-  <div id="rrHistogram"></div>
-</div>
-<div class="panel">
-  <h2>Best / Worst Pair</h2>
-  <div id="bestWorstPairs"></div>
-</div>
-<div class="panel">
-  <h2>Performance by Pair</h2>
-  <div id="pairTable"></div>
+<div class="chart-grid">
+  <div class="panel">
+    <h2>Best / Worst Pair</h2>
+    <div id="bestWorstPairs"></div>
+  </div>
+  <div class="panel">
+    <h2>Performance by Pair</h2>
+    <div id="pairTable"></div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}

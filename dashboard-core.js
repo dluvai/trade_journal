@@ -308,13 +308,13 @@ const DC = (function () {
     host.innerHTML = `
       <div class="donutRow">
         <div class="donut">
-          <svg viewBox="0 0 100 100" width="128" height="128">
+          <svg viewBox="0 0 100 100">
             <circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="${SW}"/>
             ${arcs}
           </svg>
           <div class="center"><b>${(stats.winRate * 100).toFixed(0)}%</b><span>win rate</span></div>
         </div>
-        <div class="legend" style="flex-direction:column; gap:10px;">
+        <div class="legend donut-legend">
           <div class="item"><span class="swatch" style="background:${GOOD}"></span>Wins <b style="color:var(--text-primary); margin-left:4px;">${stats.wins}</b></div>
           <div class="item"><span class="swatch" style="background:${CRIT}"></span>Losses <b style="color:var(--text-primary); margin-left:4px;">${stats.losses}</b></div>
           <div class="item"><span class="swatch" style="background:${MUTE}"></span>Breakeven <b style="color:var(--text-primary); margin-left:4px;">${stats.be}</b></div>
@@ -338,7 +338,7 @@ const DC = (function () {
     const host = document.getElementById(hostId);
     if (!host) return;
     if (!groups.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
-    const CH = 180;
+    const CH = 110;
     const cols = groups.map(g => {
       const h = Math.max(2, Math.round(g.winRate * CH));
       const style = barStyle(g.winRate >= 0.5 ? 'good' : 'bad');
@@ -366,43 +366,58 @@ const DC = (function () {
 
   // ---------- monthly return heatmap ----------
 
-  function renderMonthHeatmap(hostId, trades) {
+  // Persists across renders (same pattern as calCursor for the trade
+  // calendar) so re-rendering on a filter change doesn't snap the picker
+  // back to some default year out from under the user.
+  let monthlyReturnYear = null;
+
+  function renderMonthHeatmap(hostId, trades, yearFilterId) {
     const host = document.getElementById(hostId);
     if (!host) return;
     const map = computeMonthGrid(trades);
-    if (!map.size) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+    if (!map.size) {
+      host.innerHTML = '<div class="empty">No data.</div>';
+      monthlyReturnYear = null;
+      if (yearFilterId) document.getElementById(yearFilterId).innerHTML = '';
+      return;
+    }
     const years = [...new Set([...map.keys()].map(k => k.slice(0, 4)))].sort().reverse();
+    if (!monthlyReturnYear || !years.includes(monthlyReturnYear)) monthlyReturnYear = years[0];
     const maxAbs = Math.max(0.005, ...[...map.values()].map(g => Math.abs(g.pnl)));
 
-    const header = `<div class="hm-row hm-header"><div class="hm-yearlabel"></div>${MONTH_NAMES.map(m => `<div class="hm-monthlabel">${m}</div>`).join('')}</div>`;
-    let rows = '';
-    years.forEach(y => {
-      let cells = `<div class="hm-yearlabel">${y}</div>`;
-      for (let m = 1; m <= 12; m++) {
-        const key = `${y}-${String(m).padStart(2, '0')}`;
-        const g = map.get(key);
-        if (!g) { cells += `<div class="hm-cell hm-empty"></div>`; continue; }
-        const intensity = Math.min(1, Math.abs(g.pnl) / maxAbs);
-        const alphaPct = Math.round(20 + intensity * 65);
-        const base = g.pnl >= 0 ? GOOD : CRIT;
-        const bg = `linear-gradient(135deg, color-mix(in srgb, ${base} ${Math.min(100, alphaPct + 18)}%, var(--surface-2)) 0%, color-mix(in srgb, ${base} ${alphaPct}%, var(--surface-2)) 100%)`;
-        const textColor = alphaPct > 45 ? '#fff' : 'var(--text-primary)';
-        cells += `<div class="hm-cell" data-key="${key}" style="background:${bg}; color:${textColor};">${(g.pnl * 100).toFixed(1)}%</div>`;
-      }
-      rows += `<div class="hm-row">${cells}</div>`;
-    });
+    const cards = MONTH_NAMES.map((name, i) => {
+      const key = `${monthlyReturnYear}-${String(i + 1).padStart(2, '0')}`;
+      const g = map.get(key);
+      if (!g) return `<div class="mr-card mr-empty"><div class="mr-month">${name}</div></div>`;
+      const intensity = Math.min(1, Math.abs(g.pnl) / maxAbs);
+      const alphaPct = Math.round(20 + intensity * 65);
+      const base = g.pnl >= 0 ? GOOD : CRIT;
+      const bg = `linear-gradient(135deg, color-mix(in srgb, ${base} ${Math.min(100, alphaPct + 18)}%, var(--surface-2)) 0%, color-mix(in srgb, ${base} ${alphaPct}%, var(--surface-2)) 100%)`;
+      return `<div class="mr-card" data-key="${key}" style="background:${bg};">
+          <div class="mr-month">${name}</div>
+          <div class="mr-value" style="color:${g.pnl >= 0 ? GOOD : CRIT}">${fmtPct(g.pnl, 1)}</div>
+          <div class="mr-count">${g.total} trade${g.total === 1 ? '' : 's'}</div>
+        </div>`;
+    }).join('');
 
-    host.innerHTML = `<div class="heatmap">${header}${rows}</div>`;
-    host.querySelectorAll('.hm-cell[data-key]').forEach(cell => {
-      const g = map.get(cell.dataset.key);
-      const [y, m] = cell.dataset.key.split('-');
+    host.innerHTML = `<div class="mr-grid">${cards}</div>`;
+    host.querySelectorAll('.mr-card[data-key]').forEach(card => {
+      const g = map.get(card.dataset.key);
+      const [y, m] = card.dataset.key.split('-');
       const tooltipHtml = () => `<div class="t-title">${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}</div>
         <div class="t-row">Return: <b style="color:${g.pnl >= 0 ? GOOD : CRIT}">${fmtPct(g.pnl, 2)}</b></div>
         <div class="t-row">${g.wins}W / ${g.losses}L / ${g.be}BE · ${g.total} trades</div>`;
-      cell.addEventListener('mouseenter', (e) => showTip(e, tooltipHtml()));
-      cell.addEventListener('mousemove', moveTip);
-      cell.addEventListener('mouseleave', hideTip);
+      card.addEventListener('mouseenter', (e) => showTip(e, tooltipHtml()));
+      card.addEventListener('mousemove', moveTip);
+      card.addEventListener('mouseleave', hideTip);
     });
+
+    if (yearFilterId) {
+      renderSimpleSelect(yearFilterId, years.map(y => ({ value: y, label: y })), monthlyReturnYear, (y) => {
+        monthlyReturnYear = y;
+        renderMonthHeatmap(hostId, trades, yearFilterId);
+      });
+    }
   }
 
   // ---------- best / worst ----------
@@ -596,7 +611,7 @@ const DC = (function () {
     if (!trades.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
     const buckets = RR_BUCKETS.map(b => ({ ...b, list: trades.filter(t => b.test(t.rr)) }));
     const maxCount = Math.max(1, ...buckets.map(b => b.list.length));
-    const CH = 150;
+    const CH = 90;
     const cols = buckets.map(b => {
       const h = b.list.length ? Math.max(4, Math.round(b.list.length / maxCount * CH)) : 0;
       return `<div class="hist-col">
@@ -794,13 +809,13 @@ const DC = (function () {
     const labelFor = (preset) => (DATE_RANGE_PRESETS.find(([v]) => v === preset) || [null, preset])[1];
 
     el.innerHTML = `
-      <div class="date-range-filter">
-        <button type="button" class="iconbtn date-range-trigger" aria-expanded="false" aria-haspopup="true">
-          <span class="date-range-trigger-label">${labelFor(currentRange.preset)}</span><span class="account-filter-caret">▾</span>
+      <div class="mini-select">
+        <button type="button" class="iconbtn mini-select-trigger" aria-expanded="false" aria-haspopup="true">
+          <span class="mini-select-label">${labelFor(currentRange.preset)}</span><span class="account-filter-caret">▾</span>
         </button>
-        <div class="date-range-popover">
+        <div class="mini-select-popover">
           ${DATE_RANGE_PRESETS.map(([v, label]) => `
-            <div class="date-range-option ${v === currentRange.preset ? 'is-active' : ''}" data-preset="${v}">${label}</div>`).join('')}
+            <div class="mini-select-option ${v === currentRange.preset ? 'is-active' : ''}" data-preset="${v}">${label}</div>`).join('')}
         </div>
       </div>
       <span class="date-range-custom" style="${currentRange.preset === 'custom' ? '' : 'display:none;'}">
@@ -809,9 +824,9 @@ const DC = (function () {
         <button type="button" class="date-range-apply">Apply</button>
       </span>`;
 
-    const root = el.querySelector('.date-range-filter');
-    const trigger = root.querySelector('.date-range-trigger');
-    const labelEl = root.querySelector('.date-range-trigger-label');
+    const root = el.querySelector('.mini-select');
+    const trigger = root.querySelector('.mini-select-trigger');
+    const labelEl = root.querySelector('.mini-select-label');
     const customEl = el.querySelector('.date-range-custom');
     const startEl = el.querySelector('.date-range-start');
     const endEl = el.querySelector('.date-range-end');
@@ -831,10 +846,10 @@ const DC = (function () {
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.classList.contains('is-open')) closePopover(); });
 
-    root.querySelectorAll('.date-range-option').forEach(opt => {
+    root.querySelectorAll('.mini-select-option').forEach(opt => {
       opt.addEventListener('click', () => {
         const preset = opt.dataset.preset;
-        root.querySelectorAll('.date-range-option').forEach(o => o.classList.toggle('is-active', o === opt));
+        root.querySelectorAll('.mini-select-option').forEach(o => o.classList.toggle('is-active', o === opt));
         labelEl.textContent = labelFor(preset);
         closePopover();
         if (preset === 'custom') {
@@ -849,6 +864,55 @@ const DC = (function () {
     el.querySelector('.date-range-apply').addEventListener('click', () => {
       if (!startEl.value || !endEl.value) return;
       onChange({ preset: 'custom', start: startEl.value, end: endEl.value });
+    });
+  }
+
+  // Generic small glass-popover dropdown (single-select, no custom-range
+  // extras) -- reused for things like the monthly-return year picker.
+  // options: [{value, label}]. currentValue must match one option's value.
+  function renderSimpleSelect(hostId, options, currentValue, onSelect) {
+    const el = document.getElementById(hostId);
+    if (!el) return;
+    const labelFor = (v) => (options.find(o => o.value === v) || {}).label ?? v;
+
+    el.innerHTML = `
+      <div class="mini-select">
+        <button type="button" class="iconbtn mini-select-trigger" aria-expanded="false" aria-haspopup="true">
+          <span class="mini-select-label">${labelFor(currentValue)}</span><span class="account-filter-caret">▾</span>
+        </button>
+        <div class="mini-select-popover">
+          ${options.map(o => `
+            <div class="mini-select-option ${o.value === currentValue ? 'is-active' : ''}" data-value="${o.value}">${o.label}</div>`).join('')}
+        </div>
+      </div>`;
+
+    const root = el.querySelector('.mini-select');
+    const trigger = root.querySelector('.mini-select-trigger');
+    const labelEl = root.querySelector('.mini-select-label');
+
+    function closePopover() {
+      root.classList.remove('is-open');
+      trigger.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', onDocClick);
+    }
+    function onDocClick(e) { if (!root.contains(e.target)) closePopover(); }
+    trigger.addEventListener('click', () => {
+      const opening = !root.classList.contains('is-open');
+      root.classList.toggle('is-open', opening);
+      trigger.setAttribute('aria-expanded', String(opening));
+      if (opening) setTimeout(() => document.addEventListener('click', onDocClick), 0);
+      else document.removeEventListener('click', onDocClick);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.classList.contains('is-open')) closePopover(); });
+
+    root.querySelectorAll('.mini-select-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        const value = opt.dataset.value;
+        if (value === currentValue) { closePopover(); return; }
+        labelEl.textContent = labelFor(value);
+        closePopover();
+        onSelect(value);
+      });
     });
   }
 
@@ -1089,7 +1153,7 @@ const DC = (function () {
     renderDonut('donutChart', stats);
     renderWinRateBars('dayChart', computeGroupStats(trades, 'day', DAY_ORDER));
     renderWinRateBars('sessionChart', computeGroupStats(trades, 'session'));
-    renderMonthHeatmap('monthChart', trades);
+    renderMonthHeatmap('monthChart', trades, 'monthlyReturnYearFilter');
     renderRRHistogram('rrHistogram', trades);
     renderCalendar('calendarGrid', 'calendarDetails', allTrades, { onEdit: opts.onEdit, onDelete: opts.onDelete }, opts.accountBalance);
     renderBestWorstPairs('bestWorstPairs', bw);
