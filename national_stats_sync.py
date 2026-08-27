@@ -65,9 +65,9 @@ Covers two metric families:
       manufactured products) as an index level -- YoY computed the same
       way as CAD's. ~1 month lag.
 
-  retail_sales_yoy for GBP and CAD -- same concept as USD's existing
-  FRED-sourced figure (RSAFS), just from each country's own source since
-  neither FRED nor OECD carry it for these two.
+  retail_sales_yoy for GBP, CAD, and AUD -- same concept as USD's
+  existing FRED-sourced figure (RSAFS), just from each country's own
+  source since neither FRED nor OECD carry it for these three.
     - CAD: StatCan WDS. Vector 1446859483 is total retail sales (SA,
       table 20-10-0056), a dollar level -- YoY computed the same way as
       the PPI vector above. ~1 month lag.
@@ -75,6 +75,43 @@ Covers two metric families:
       published YoY figure ("% change on same month a year ago") for
       volume-terms retail sales including fuel -- no computation needed,
       taken as-is. ~1 month lag.
+    - AUD: ABS's own Retail Trade series was discontinued 31 July 2025;
+      its official replacement is the Monthly Household Spending
+      Indicator (dataflow HSI_M). Measure 9 ("Household spending - Index
+      - Through the year percentage change"), category TOT, current
+      prices, seasonally adjusted is already the YoY figure -- no
+      computation needed. Getting a live response here needed an
+      SDMX quirk: querying a single fixed dimension key 404s even with
+      correct-looking codes, but requesting the "+"-joined measure set
+      ABS's own default view uses (7+8+9) with lastNObservations
+      returns real data that's then filtered down to measure 9 by its
+      value id, not by an assumed key position -- ABS's own dimension
+      ordering isn't guaranteed stable enough to hardcode positionally.
+      ~1 month lag.
+
+  current_account_pct_gdp -- a deliberately separate field from the
+  existing current_account (USD-only, raw dollars), so no live currency
+  conversion is needed to compare across currencies: expressing as a
+  share of GDP is also the standard way economists compare external
+  balances across differently-sized economies.
+    - CAD only so far. StatCan's balance-of-payments table (36-10-0018)
+      404/409s on every WDS metadata and vector-data endpoint tried --
+      genuinely broken there, not a transient hiccup (retried across a
+      long gap) -- so this instead downloads the table's full CSV export
+      (getFullTableDownloadCSV, a different WDS endpoint that does work)
+      and reads the "Balances, seasonally adjusted" x "Total current
+      account" row directly. That's a quarterly flow in millions; GDP
+      (vector 62305783) is StatCan's own seasonally-adjusted-at-annual-
+      rate figure, so the quarterly current-account number is annualized
+      (x4) before dividing, matching how this ratio is conventionally
+      reported. ~1 quarter lag.
+    - GBP: ONS's timeseries API. Series AA6H is already published by ONS
+      as "current account balance as per cent of GDP" -- no computation
+      needed, taken as-is. ~1 quarter lag.
+    - AUD: ABS's BOP dataflow (current account, current prices, SA) and
+      ANA_EXP dataflow (expenditure GDP, current prices, SA) divided
+      directly -- unlike StatCan's SAAR convention, ABS doesn't annualize
+      either series, so no x4 adjustment here. ~1 quarter lag.
 
 Run standalone to see exactly what it would fetch:
     python national_stats_sync.py
@@ -88,12 +125,18 @@ import db
 STATCAN_VECTOR_ID = 2062811  # Canada; Employment; Total; 15 years and over; SA
 STATCAN_PPI_VECTOR_ID = 1230995983  # Canada; Total, Industrial product price index (IPPI)
 STATCAN_RETAIL_VECTOR_ID = 1446859483  # Canada; Retail trade; Total retail sales; SA
+STATCAN_GDP_VECTOR_ID = 62305783  # Canada; GDP at market prices; current $; SAAR
+STATCAN_BOP_ZIP_URL = "https://www150.statcan.gc.ca/n1/tbl/csv/36100018-eng.zip"  # table's getCubeMetadata/vector endpoints 409 -- full-table CSV download is the only path that works
 ABS_LF_URL = "https://data.api.abs.gov.au/rest/data/ABS,LF,1.0.0/M3.3.1599.20.AUS.M?dimensionAtObservation=AllDimensions&startPeriod={start}"
+ABS_BOP_URL = "https://data.api.abs.gov.au/rest/data/ABS,BOP/1.100.20.Q?dimensionAtObservation=AllDimensions&lastNObservations=4"
+ABS_GDP_URL = "https://data.api.abs.gov.au/rest/data/ABS,ANA_EXP/C.GPM.SSS.20.AUS.Q?dimensionAtObservation=AllDimensions&lastNObservations=4"
+ABS_HSI_URL = "https://data.api.abs.gov.au/rest/data/ABS,HSI_M/7+8+9....AUS.M?dimensionAtObservation=AllDimensions&lastNObservations=6"
 ABS_PPI_LATEST_RELEASE_URL = "https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/producer-price-indexes-australia/latest-release"
 ONS_MGRZ_URL = "https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/timeseries/mgrz/lms/data?format=json"
 ONS_ECYX_URL = "https://www.ons.gov.uk/economy/grossdomesticproductgdp/timeseries/ecyx/mgdp/data?format=json"
 ONS_GB7S_URL = "https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/gb7s/ppi/data?format=json"
 ONS_J5EB_URL = "https://www.ons.gov.uk/businessindustryandtrade/retailindustry/timeseries/j5eb/drsi/data?format=json"
+ONS_AA6H_URL = "https://www.ons.gov.uk/economy/nationalaccounts/balanceofpayments/timeseries/aa6h/ukea/data?format=json"
 
 METRIC_NOTES = {
     ("GBP", "employment_change"): "3-month change vs. the prior 3 months (ONS's own headline convention), not a literal month-over-month diff -- the underlying LFS survey is too noisy for that.",
@@ -204,6 +247,42 @@ def _fetch_cad_retail():
     return _statcan_vector_yoy(STATCAN_RETAIL_VECTOR_ID)
 
 
+def _fetch_cad_current_account_pct_gdp():
+    import csv
+    import io
+    import zipfile
+    req = urllib.request.Request(STATCAN_BOP_ZIP_URL, headers={"User-Agent": "curl/8.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read()
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        with z.open("36100018.csv") as f:
+            text = f.read().decode("utf-8-sig")
+    ca_period, ca_value = None, None
+    for row in csv.DictReader(io.StringIO(text)):
+        if row["Receipts, payments and balances"] == "Balances, seasonally adjusted" and row["Current account"] == "Total current account":
+            ca_period, ca_value = row["REF_DATE"], float(row["VALUE"])
+    if ca_period is None:
+        return None, None
+
+    gdp_url = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAndLatestNPeriods"
+    payload = [{"vectorId": STATCAN_GDP_VECTOR_ID, "latestN": 4}]
+    req2 = urllib.request.Request(
+        gdp_url, data=json.dumps(payload).encode("utf-8"),
+        headers={"User-Agent": "curl/8.0", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req2, timeout=15) as resp:
+        gdp_data = json.loads(resp.read().decode("utf-8"))
+    gdp_value = next((p["value"] for p in gdp_data[0]["object"]["vectorDataPoint"] if p["refPer"][:7] == ca_period), None)
+    if gdp_value is None:
+        return None, None
+    # ca_value is a quarterly flow (millions); gdp_value is already an
+    # annual rate (StatCan's SAAR convention) -- annualize the quarterly
+    # flow (x4) before dividing so both sides of the ratio are on the same
+    # annual basis, matching how current-account-to-GDP is conventionally
+    # reported internationally.
+    return ca_period, round((ca_value * 4) / gdp_value * 100, 2)
+
+
 def _fetch_gbp_ppi():
     return _ons_index_yoy(ONS_GB7S_URL)
 
@@ -217,6 +296,84 @@ def _fetch_gbp_retail():
         return None, None
     latest = months[-1]
     return latest["date"], round(float(latest["value"]), 2)
+
+
+def _fetch_gbp_current_account_pct_gdp():
+    req = urllib.request.Request(ONS_AA6H_URL, headers={"User-Agent": "curl/8.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    quarters = data.get("quarters", [])
+    if not quarters:
+        return None, None
+    latest = quarters[-1]
+    return latest["date"], round(float(latest["value"]), 2)
+
+
+def _fetch_aud_retail():
+    req = urllib.request.Request(ABS_HSI_URL, headers={"User-Agent": "curl/8.0", "Accept": "application/vnd.sdmx.data+json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        envelope = json.loads(resp.read().decode("utf-8"))
+    data = envelope["data"]
+    observations = data["dataSets"][0]["observations"]
+    obs_dims = data["structures"][0]["dimensions"]["observation"]
+    idx = {dim["id"]: i for i, dim in enumerate(obs_dims)}
+
+    def _value_index(dim_id, value_id):
+        return next(i for i, v in enumerate(obs_dims[idx[dim_id]]["values"]) if v["id"] == value_id)
+
+    m_idx = _value_index("MEASURE", "9")  # Household spending - Index - Through the year percentage change
+    cat_idx = _value_index("CATEGORY", "TOT")
+    tsest_idx = _value_index("TSEST", "20")  # Seasonally Adjusted
+    time_values = obs_dims[idx["TIME_PERIOD"]]["values"]
+
+    rows = []
+    for key, value_list in observations.items():
+        parts = [int(p) for p in key.split(":")]
+        if parts[idx["MEASURE"]] != m_idx or parts[idx["CATEGORY"]] != cat_idx or parts[idx["TSEST"]] != tsest_idx:
+            continue
+        if not value_list or value_list[0] is None:
+            continue
+        rows.append((time_values[parts[idx["TIME_PERIOD"]]]["id"], float(value_list[0])))
+    if not rows:
+        return None, None
+    rows.sort(key=lambda r: r[0])
+    period, value = rows[-1]
+    return period, round(value, 2)
+
+
+def _abs_series(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0", "Accept": "application/vnd.sdmx.data+json"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        envelope = json.loads(resp.read().decode("utf-8"))
+    data = envelope["data"]
+    observations = data["dataSets"][0]["observations"]
+    obs_dims = data["structures"][0]["dimensions"]["observation"]
+    time_idx = next(i for i, d in enumerate(obs_dims) if d["id"] == "TIME_PERIOD")
+    time_values = obs_dims[time_idx]["values"]
+    rows = []
+    for key, value_list in observations.items():
+        if not value_list or value_list[0] is None:
+            continue
+        idx = int(key.split(":")[time_idx])
+        rows.append((time_values[idx]["id"], float(value_list[0])))
+    rows.sort(key=lambda r: r[0])
+    return rows
+
+
+def _fetch_aud_current_account_pct_gdp():
+    ca_rows = _abs_series(ABS_BOP_URL)
+    gdp_rows = _abs_series(ABS_GDP_URL)
+    if not ca_rows or not gdp_rows:
+        return None, None
+    gdp_by_period = dict(gdp_rows)
+    period, ca_value = ca_rows[-1]
+    gdp_value = gdp_by_period.get(period)
+    if gdp_value is None:
+        return None, None
+    # Both are already plain quarterly levels (ABS doesn't annualize
+    # either the BOP or the expenditure-GDP series, unlike StatCan's SAAR
+    # convention for CAD) -- divide directly, no annualizing needed.
+    return period, round(ca_value / gdp_value * 100, 2)
 
 
 def _fetch_aud_ppi():
@@ -257,7 +414,12 @@ FETCHERS = {
     "employment_change": {"CAD": _fetch_cad_employment, "AUD": _fetch_aud_employment, "GBP": _fetch_gbp_employment},
     "gdp_mom": {"GBP": _fetch_gbp_gdp_mom},
     "ppi_yoy": {"CAD": _fetch_cad_ppi, "AUD": _fetch_aud_ppi, "GBP": _fetch_gbp_ppi},
-    "retail_sales_yoy": {"CAD": _fetch_cad_retail, "GBP": _fetch_gbp_retail},
+    "retail_sales_yoy": {"CAD": _fetch_cad_retail, "GBP": _fetch_gbp_retail, "AUD": _fetch_aud_retail},
+    "current_account_pct_gdp": {
+        "CAD": _fetch_cad_current_account_pct_gdp,
+        "GBP": _fetch_gbp_current_account_pct_gdp,
+        "AUD": _fetch_aud_current_account_pct_gdp,
+    },
 }
 
 

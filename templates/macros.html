@@ -90,7 +90,7 @@ const METRIC_GROUPS = [
       note: 'The net change in jobs for the month -- a strong print signals a resilient labor market and economic momentum (currency-positive); a weak or negative print raises recession concern. For GBP this is ONS\'s own 3-month-vs-prior-3-month convention, not a literal month-over-month figure -- the underlying survey is too noisy for that.' },
   ] },
   { title: 'Activity', metrics: [
-    { key: 'retail_sales_yoy', label: 'Retail sales YoY', suffix: '%', step: '0.01', applies: ['USD', 'GBP', 'CAD'],
+    { key: 'retail_sales_yoy', label: 'Retail sales YoY', suffix: '%', step: '0.01', applies: ['USD', 'GBP', 'CAD', 'AUD'],
       note: 'Consumer spending makes up the bulk of most economies\' GDP -- rising retail sales signal healthy demand and economic momentum.' },
   ] },
   { title: 'Trade', metrics: [
@@ -100,6 +100,8 @@ const METRIC_GROUPS = [
   { title: 'Current account', metrics: [
     { key: 'current_account', label: 'Balance', prefix: '$', suffix: 'B', step: '0.1', applies: ['USD'],
       note: 'The broadest measure of transactions with the rest of the world (trade plus investment income) -- a surplus reflects net foreign demand for the currency; a persistent deficit typically needs financing by capital inflows, which can pressure it lower over time.' },
+    { key: 'current_account_pct_gdp', label: 'Balance (% of GDP)', suffix: '%', step: '0.01', applies: ['GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'NZD', 'EUR'],
+      note: 'Same concept as Balance, scaled to the size of the economy -- kept separate from the USD figure (which is in raw dollars) rather than forcing a live currency conversion; comparing as a share of GDP is also the standard way economists compare external balances across differently-sized economies.' },
   ] },
   { title: 'GDP', metrics: [
     { key: 'gdp_yoy', label: 'GDP YoY', suffix: '%', step: '0.01',
@@ -152,7 +154,7 @@ const SCORED_METRICS = [
   ['interest_rate', true], ['gdp_yoy', true], ['gdp_mom', true], ['unemployment', false], ['pmi', true],
   ['cpi_yoy', true], ['cpi_mom', true], ['core_cpi_yoy', true], ['core_ppi_yoy', true], ['ppi_yoy', true],
   ['core_pce_yoy', true], ['core_pce_mom', true], ['employment_change', true],
-  ['retail_sales_yoy', true], ['trade_balance', true], ['current_account', true],
+  ['retail_sales_yoy', true], ['trade_balance', true], ['current_account', true], ['current_account_pct_gdp', true],
 ];
 
 function orderPair(a, b) {

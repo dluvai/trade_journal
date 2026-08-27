@@ -60,8 +60,8 @@ MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
 # enough, no separate CREATE TABLE edit needed.
 MACRO_METRIC_KEYS = [
     "interest_rate", "cpi_yoy", "cpi_mom", "core_cpi_yoy", "core_ppi_yoy", "ppi_yoy", "core_pce_yoy", "core_pce_mom",
-    "unemployment", "employment_change", "retail_sales_yoy", "trade_balance", "current_account", "gdp_yoy",
-    "gdp_mom", "pmi",
+    "unemployment", "employment_change", "retail_sales_yoy", "trade_balance", "current_account",
+    "current_account_pct_gdp", "gdp_yoy", "gdp_mom", "pmi",
 ]
 
 

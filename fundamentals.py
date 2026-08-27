@@ -22,6 +22,7 @@ METRIC_LABELS = {
     "retail_sales_yoy": "Retail sales (YoY)",
     "trade_balance": "Trade balance",
     "current_account": "Current account",
+    "current_account_pct_gdp": "Current account (% of GDP)",
 }
 
 METRIC_EXPLAINERS = {
@@ -96,6 +97,12 @@ METRIC_EXPLAINERS = {
         "income) -- a surplus reflects net foreign demand for the currency; a persistent deficit "
         "typically needs financing by capital inflows, which can pressure it lower over time."
     ),
+    "current_account_pct_gdp": (
+        "Same concept as current account, scaled to the size of the economy -- deliberately a "
+        "separate field from current_account (which is USD-only, in raw dollars) rather than "
+        "forcing a live FX conversion into a shared field; comparing as a share of GDP is also "
+        "the standard way economists compare external balances across differently-sized economies."
+    ),
 }
 
 # (metric key, higher value = stronger currency). Every macro metric the app
@@ -121,6 +128,7 @@ SCORED_METRICS = [
     ("retail_sales_yoy", True),
     ("trade_balance", True),
     ("current_account", True),
+    ("current_account_pct_gdp", True),
 ]
 
 
