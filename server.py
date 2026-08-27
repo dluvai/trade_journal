@@ -463,6 +463,7 @@ NAV_ITEMS = [
     {"key": "overview", "label": "Overview", "endpoint": "overview"},
     {"key": "trades", "label": "Trades", "endpoint": "trades_page"},
     {"key": "macros", "label": "Macros", "endpoint": "macros_page"},
+    {"key": "calendar", "label": "Calendar", "endpoint": "calendar_page"},
     {"key": "strategy", "label": "Strategy", "endpoint": "strategy_page"},
 ]
 
@@ -485,6 +486,11 @@ def trades_page():
 @app.get("/macros")
 def macros_page():
     return render_template("macros.html", active_page="macros")
+
+
+@app.get("/calendar")
+def calendar_page():
+    return render_template("calendar.html", active_page="calendar")
 
 
 @app.get("/strategy")

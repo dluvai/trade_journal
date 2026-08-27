@@ -207,6 +207,12 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 @media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
 
+/* iframe embeds report height:100% against whatever we give the wrapper --
+   without an explicit height here the Myfxbook calendar collapses to 0px. */
+.calendar-embed { height: calc(100vh - 200px); min-height: 520px; }
+.calendar-embed iframe { display: block; }
+@media (max-width: 640px) { .calendar-embed { height: calc(100vh - 260px); min-height: 420px; } }
+
 svg { display: block; width: 100%; height: auto; overflow: visible; }
 .axis-label { fill: var(--text-muted); font-size: 10.5px; }
 .gridline { stroke: var(--grid); stroke-width: 1; }

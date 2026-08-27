@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Calendar — SteadFast{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h2>Economic Calendar</h2>
+  <p style="margin:0 0 14px; font-size:12.5px; color:var(--text-muted);">
+    Live reference for cross-checking the Macros page -- release dates, actual/forecast/previous
+    figures, and impact come straight from Myfxbook below. If a synced value here looks off
+    against what actually printed, correct it manually on the Macros page.
+  </p>
+  <div class="calendar-embed">
+    <!-- myfxbook.com Economic Calendar Widget - Start -->
+    <iframe src="https://widget.myfxbook.com/widget/calendar.html?lang=en&impacts=0,1,2,3&symbols=AUD,CAD,CHF,CNY,EUR,GBP,JPY,NZD,USD" style="border: 0; width:100%; height:100%;"></iframe><div style="margin-top: 10px;">
+            <div style="width: fit-content; margin: auto;font-family: roboto,sans-serif!important; font-size: 13px; color: #666666;">
+             <a href="https://www.myfxbook.com/forex-economic-calendar?utm_source=widget13&utm_medium=link&utm_campaign=copyright" title="Economic Calendar" class="myfxbookLink" target="_blank" rel="noopener"><b style="color:#666666">Economic Calendar</b></a>
+             by Myfxbook.com
+            </div></div>
+    <!-- myfxbook.com Economic Calendar Widget - End -->
+  </div>
+</div>
+
+{% endblock %}
