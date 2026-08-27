@@ -781,31 +781,70 @@ const DC = (function () {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  // Custom glass popover, not a native <select> -- a native select's open
+  // option list is painted by the OS/browser and ignores backdrop-filter
+  // and border-radius entirely, so it always looked like a plain opaque
+  // box no matter what CSS was applied to the closed control. Mirrors
+  // renderAccountFilter's trigger+popover+outside-click pattern exactly
+  // so every dropdown in the app shares the same glass material.
   function renderDateRangeFilter(hostId, currentRange, onChange) {
     const el = document.getElementById(hostId);
     if (!el) return;
     const todayStr = localTodayStr();
+    const labelFor = (preset) => (DATE_RANGE_PRESETS.find(([v]) => v === preset) || [null, preset])[1];
+
     el.innerHTML = `
-      <select class="date-range-select">
-        ${DATE_RANGE_PRESETS.map(([v, label]) => `<option value="${v}" ${v === currentRange.preset ? 'selected' : ''}>${label}</option>`).join('')}
-      </select>
+      <div class="date-range-filter">
+        <button type="button" class="iconbtn date-range-trigger" aria-expanded="false" aria-haspopup="true">
+          <span class="date-range-trigger-label">${labelFor(currentRange.preset)}</span><span class="account-filter-caret">▾</span>
+        </button>
+        <div class="date-range-popover">
+          ${DATE_RANGE_PRESETS.map(([v, label]) => `
+            <div class="date-range-option ${v === currentRange.preset ? 'is-active' : ''}" data-preset="${v}">${label}</div>`).join('')}
+        </div>
+      </div>
       <span class="date-range-custom" style="${currentRange.preset === 'custom' ? '' : 'display:none;'}">
         <input type="date" class="date-range-start" value="${currentRange.preset === 'custom' ? currentRange.start : ''}">
         <input type="date" class="date-range-end" value="${currentRange.preset === 'custom' ? currentRange.end : ''}">
         <button type="button" class="date-range-apply">Apply</button>
       </span>`;
-    const select = el.querySelector('.date-range-select');
+
+    const root = el.querySelector('.date-range-filter');
+    const trigger = root.querySelector('.date-range-trigger');
+    const labelEl = root.querySelector('.date-range-trigger-label');
     const customEl = el.querySelector('.date-range-custom');
     const startEl = el.querySelector('.date-range-start');
     const endEl = el.querySelector('.date-range-end');
-    select.addEventListener('change', () => {
-      if (select.value === 'custom') {
-        customEl.style.display = '';
-        return; // wait for Apply -- picking "Custom" alone has no start/end yet
-      }
-      customEl.style.display = 'none';
-      const bounds = computeDateRangeBounds(select.value, null, null, todayStr);
-      onChange({ preset: select.value, start: bounds.start, end: bounds.end });
+
+    function closePopover() {
+      root.classList.remove('is-open');
+      trigger.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', onDocClick);
+    }
+    function onDocClick(e) { if (!root.contains(e.target)) closePopover(); }
+    trigger.addEventListener('click', () => {
+      const opening = !root.classList.contains('is-open');
+      root.classList.toggle('is-open', opening);
+      trigger.setAttribute('aria-expanded', String(opening));
+      if (opening) setTimeout(() => document.addEventListener('click', onDocClick), 0);
+      else document.removeEventListener('click', onDocClick);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.classList.contains('is-open')) closePopover(); });
+
+    root.querySelectorAll('.date-range-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        const preset = opt.dataset.preset;
+        root.querySelectorAll('.date-range-option').forEach(o => o.classList.toggle('is-active', o === opt));
+        labelEl.textContent = labelFor(preset);
+        closePopover();
+        if (preset === 'custom') {
+          customEl.style.display = '';
+          return; // wait for Apply -- picking "Custom" alone has no start/end yet
+        }
+        customEl.style.display = 'none';
+        const bounds = computeDateRangeBounds(preset, null, null, todayStr);
+        onChange({ preset, start: bounds.start, end: bounds.end });
+      });
     });
     el.querySelector('.date-range-apply').addEventListener('click', () => {
       if (!startEl.value || !endEl.value) return;
