@@ -104,6 +104,8 @@ const METRIC_GROUPS = [
   { title: 'GDP', metrics: [
     { key: 'gdp_yoy', label: 'GDP YoY', suffix: '%', step: '0.01',
       note: 'Faster GDP growth signals a healthier economy and more attractive returns for foreign investors -- generally currency-positive.' },
+    { key: 'gdp_mom', label: 'GDP MoM', suffix: '%', step: '0.01', applies: ['GBP'],
+      note: 'A more immediate, noisier read on growth than the annual figure -- the UK is the only major economy that publishes GDP monthly rather than just quarterly.' },
   ] },
   { title: 'PMI', metrics: [
     { key: 'pmi', label: 'PMI', suffix: '', step: '0.1',
@@ -145,7 +147,7 @@ let selectedCcy = (function() {
 let LATEST_MACRO_ROWS = [];
 // mirrors fundamentals.py SCORED_METRICS -- keep in sync if that changes
 const SCORED_METRICS = [
-  ['interest_rate', true], ['gdp_yoy', true], ['unemployment', false], ['pmi', true],
+  ['interest_rate', true], ['gdp_yoy', true], ['gdp_mom', true], ['unemployment', false], ['pmi', true],
   ['cpi_yoy', true], ['cpi_mom', true], ['core_cpi_yoy', true], ['core_ppi_yoy', true],
   ['core_pce_yoy', true], ['core_pce_mom', true], ['employment_change', true],
   ['retail_sales_yoy', true], ['trade_balance', true], ['current_account', true],

@@ -1,6 +1,6 @@
 """
 Unified macro-data sync: dispatches each (currency, metric) job to whichever
-of fred_sync.py, oecd_sync.py, employment_sync.py, or
+of fred_sync.py, oecd_sync.py, national_stats_sync.py, or
 central_bank_rates.py is the better source, then does one merged
 db.upsert_macro() write per currency -- never independent passes racing
 each other.
@@ -27,7 +27,7 @@ Run standalone to see exactly what it would fetch, and from where:
     python macro_sync.py
 """
 import central_bank_rates
-import employment_sync
+import national_stats_sync
 import fred_sync
 import oecd_sync
 import db
@@ -44,11 +44,14 @@ OECD_ROUTED = {
     ("CHF", "unemployment"),
 }
 
-# employment_change for the three currencies whose employment report is an
-# actual FX market mover -- see employment_sync.py's docstring for why
-# these three and not the others. USD's employment_change is unaffected,
-# still comes from fred_sync (nonfarm payrolls).
-EMPLOYMENT_ROUTED = {("CAD", "employment_change"), ("AUD", "employment_change"), ("GBP", "employment_change")}
+# Every (currency, metric) job national_stats_sync.py covers -- see its
+# docstring for why each one and not others. USD's employment_change is
+# unaffected, still comes from fred_sync (nonfarm payrolls); gdp_yoy for
+# every currency (including GBP) is also unaffected, this only adds GBP's
+# monthly gdp_mom alongside it.
+NATIONAL_STATS_ROUTED = {
+    (ccy, metric) for metric, fetchers in national_stats_sync.FETCHERS.items() for ccy in fetchers
+}
 
 # interest_rate for every currency whose own central bank publishes it
 # directly -- see central_bank_rates.py's docstring for the exact source
@@ -73,7 +76,7 @@ def sync(currencies=None, dry_run=False):
     # and then picking, per (currency, metric), which report to keep.
     fred_report = fred_sync.sync(currencies=currencies, dry_run=True)
     oecd_report = oecd_sync.sync(currencies=currencies, dry_run=True)
-    employment_report = employment_sync.sync(currencies=currencies, dry_run=True)
+    national_stats_report = national_stats_sync.sync(currencies=currencies, dry_run=True)
     rates_report = central_bank_rates.sync(currencies=currencies, dry_run=True)
 
     report = {ccy: {} for ccy in currencies}
@@ -81,7 +84,7 @@ def sync(currencies=None, dry_run=False):
 
     for ccy in currencies:
         for metric in fred_sync.SERIES.get(ccy, {}):
-            if (ccy, metric) in OECD_ROUTED or (ccy, metric) in CENTRAL_BANK_ROUTED:
+            if (ccy, metric) in OECD_ROUTED or (ccy, metric) in CENTRAL_BANK_ROUTED or (ccy, metric) in NATIONAL_STATS_ROUTED:
                 continue
             entry = fred_report.get(ccy, {}).get(metric)
             if not entry:
@@ -102,13 +105,16 @@ def sync(currencies=None, dry_run=False):
             if entry.get("error") is None and entry.get("value") is not None:
                 fetched_by_ccy[ccy][metric] = entry["value"]
 
-        if (ccy, "employment_change") in EMPLOYMENT_ROUTED:
-            entry = employment_report.get(ccy)
-            if entry:
-                entry = dict(entry, source="national_stats")
-                report[ccy]["employment_change"] = entry
-                if entry.get("error") is None and entry.get("value") is not None:
-                    fetched_by_ccy[ccy]["employment_change"] = entry["value"]
+        for metric in national_stats_sync.FETCHERS:
+            if (ccy, metric) not in NATIONAL_STATS_ROUTED:
+                continue
+            entry = national_stats_report.get(ccy, {}).get(metric)
+            if not entry:
+                continue
+            entry = dict(entry, source="national_stats")
+            report[ccy][metric] = entry
+            if entry.get("error") is None and entry.get("value") is not None:
+                fetched_by_ccy[ccy][metric] = entry["value"]
 
         if (ccy, "interest_rate") in CENTRAL_BANK_ROUTED:
             entry = rates_report.get(ccy)

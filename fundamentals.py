@@ -8,6 +8,7 @@ ai_bias.py) uses this as its factual basis rather than guessing numbers.
 METRIC_LABELS = {
     "interest_rate": "Interest rate",
     "gdp_yoy": "GDP growth (YoY)",
+    "gdp_mom": "GDP growth (MoM)",
     "unemployment": "Unemployment rate",
     "pmi": "PMI (manufacturing)",
     "cpi_yoy": "CPI (YoY inflation)",
@@ -30,6 +31,10 @@ METRIC_EXPLAINERS = {
     "gdp_yoy": (
         "Faster GDP growth signals a healthier economy and more attractive returns for "
         "foreign investors -- generally currency-positive."
+    ),
+    "gdp_mom": (
+        "A more immediate, noisier read on growth than the annual figure -- the UK is the only "
+        "major economy that publishes GDP monthly rather than just quarterly."
     ),
     "unemployment": (
         "A lower unemployment rate signals a tighter labor market and a stronger economy; "
@@ -96,6 +101,7 @@ METRIC_EXPLAINERS = {
 SCORED_METRICS = [
     ("interest_rate", True),
     ("gdp_yoy", True),
+    ("gdp_mom", True),
     ("unemployment", False),
     ("pmi", True),
     ("cpi_yoy", True),
