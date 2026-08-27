@@ -54,9 +54,9 @@ import db
 import debt_model
 import email_sender
 import fred_calendar
-import fred_sync
 import fundamentals
 import import_trades
+import macro_sync
 import market_data
 import rate_calendar
 
@@ -657,9 +657,9 @@ def api_put_macro(currency):
 @app.post("/api/macro/sync")
 def api_macro_sync():
     try:
-        report = fred_sync.sync()
+        report = macro_sync.sync()
     except Exception as e:
-        return jsonify({"error": f"FRED sync failed: {e}"}), 502
+        return jsonify({"error": f"macro sync failed: {e}"}), 502
     return jsonify(report)
 
 

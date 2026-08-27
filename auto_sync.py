@@ -1,10 +1,10 @@
 """
 Server-side auto-sync: once a known calendar release time passes, this
-background thread re-syncs that currency from FRED every minute for up to
-45 minutes (or until the data actually changes) -- the same behavior
-live_dashboard.html implements client-side, except this runs inside the
-server process itself, so it still works even if nobody has the dashboard
-open in a browser tab when a release happens.
+background thread re-syncs that currency from its configured source(s)
+every minute for up to 45 minutes (or until the data actually changes) --
+the same behavior live_dashboard.html implements client-side, except this
+runs inside the server process itself, so it still works even if nobody
+has the dashboard open in a browser tab when a release happens.
 
 Only events with a verified time_utc participate (see fred_calendar.py /
 rate_calendar.py) -- BOJ decisions have no fixed announcement time, so they
@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 import calendar_view
 import db
-import fred_sync
+import macro_sync
 
 CHECK_INTERVAL_SECONDS = 60
 POLL_WINDOW_MINUTES = 45
@@ -58,9 +58,9 @@ def _poll_after_release(event_key, currency):
     while attempts < POLL_WINDOW_MINUTES:
         attempts += 1
         try:
-            fred_sync.sync(currencies=[currency])
+            macro_sync.sync(currencies=[currency])
         except Exception:
-            pass  # transient FRED hiccup -- next minute retries
+            pass  # transient provider hiccup -- next minute retries
         after = next((r for r in db.list_macro() if r["currency"] == currency), None)
         if after != before:
             break
@@ -89,7 +89,7 @@ def _watch_loop():
             now_ts = time.time()
             if now_ts - last_full_sync >= FULL_SYNC_INTERVAL_SECONDS:
                 try:
-                    fred_sync.sync()
+                    macro_sync.sync()
                 except Exception:
                     pass
                 last_full_sync = now_ts
