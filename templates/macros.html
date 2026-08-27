@@ -10,9 +10,9 @@
   <h2>US Federal Debt Sustainability <span class="n" id="debtAsOf"></span></h2>
   <div id="debtContent"></div>
 </div>
-<div class="panel">
+<div class="panel" id="fundamentalsPanel">
   <h2>Fundamentals</h2>
-  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
+  <div id="fundamentalsCompareRow" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
     <span style="font-family:var(--font-mono); font-weight:600; font-size:14px;" id="biasBaseLabel">USD</span>
     <span style="color:var(--text-muted); font-size:12px;">vs</span>
     <select id="compareCcy" class="macro-input" style="width:auto; font-family:var(--font-mono); font-size:14px; padding:7px 12px;"></select>
@@ -20,7 +20,7 @@
   </div>
   <div id="fundamentalsResult" style="margin-top:16px;"></div>
 </div>
-<div class="panel">
+<div class="panel" id="macroWorkspacePanel">
   <div class="workspace-head">
     <h2 style="margin:0;">Macro Workspace</h2>
     <div class="form-actions">
@@ -59,6 +59,17 @@
 {% block scripts %}
 <script>
 const CCY_ORDER = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD'];
+// Not currencies -- deliberately kept out of CCY_ORDER (which drives the FX
+// pairing/comparison logic below) and shown as a separate dropdown group.
+// XAU gets its own real-rate-proxy bias view (see computeGoldBias); NQ/ES
+// get news only, no bias -- see market_data.py's CURRENCY_NEWS_QUERIES for
+// why a bias verdict isn't attempted for equity indices.
+const EXTRA_INSTRUMENTS = [
+  { key: 'XAU', label: 'XAU (Gold)' },
+  { key: 'NQ', label: 'NQ (Nasdaq 100)' },
+  { key: 'ES', label: 'ES (S&P 500)' },
+];
+const ALL_SELECTABLE = CCY_ORDER.concat(EXTRA_INSTRUMENTS.map(i => i.key));
 // Standard FX market quoting hierarchy -- whichever currency comes first here
 // is always the base when paired with anything later in the list (this is
 // why it's EURUSD not USDEUR, USDJPY not JPYUSD, etc). CAD sits right after
@@ -145,7 +156,7 @@ let RATE_CALENDAR = {};
 let selectedCcy = (function() {
   try {
     const stored = localStorage.getItem('sf-macro-ccy');
-    return CCY_ORDER.includes(stored) ? stored : 'USD';
+    return ALL_SELECTABLE.includes(stored) ? stored : 'USD';
   } catch (e) { return 'USD'; }
 })();
 let LATEST_MACRO_ROWS = [];
@@ -260,18 +271,67 @@ function populateCompareDropdown() {
 }
 
 function onCcyChange() {
-  renderMacroWorkspace(LATEST_MACRO_ROWS);
   document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
   loadCcyNews();
-  document.getElementById('biasBaseLabel').textContent = selectedCcy;
-  populateCompareDropdown();
-  loadFundamentals();
+
+  const isExtra = !CCY_ORDER.includes(selectedCcy);
+  document.getElementById('macroWorkspacePanel').style.display = isExtra ? 'none' : '';
+  document.getElementById('fundamentalsCompareRow').style.display = isExtra ? 'none' : '';
+
+  if (selectedCcy === 'XAU') {
+    document.getElementById('fundamentalsPanel').style.display = '';
+    document.getElementById('biasError').textContent = '';
+    renderGoldBiasPanel(document.getElementById('fundamentalsResult'));
+  } else if (isExtra) {
+    // NQ/ES -- no fundamentals bias attempted (see market_data.py's
+    // CURRENCY_NEWS_QUERIES comment for why), news panel only.
+    document.getElementById('fundamentalsPanel').style.display = 'none';
+  } else {
+    document.getElementById('fundamentalsPanel').style.display = '';
+    renderMacroWorkspace(LATEST_MACRO_ROWS);
+    document.getElementById('biasBaseLabel').textContent = selectedCcy;
+    populateCompareDropdown();
+    loadFundamentals();
+  }
+}
+
+// Gold has no macro data of its own (no rate, no CPI) so it doesn't fit
+// the currency-pair comparison model -- what actually drives it is the
+// real interest rate (nominal rate minus inflation), which sets the
+// opportunity cost of holding a non-yielding asset. A real, well-
+// documented relationship, but a simplified one: the market's own
+// convention uses actual 10-year TIPS yields, which this app doesn't
+// track -- USD's policy rate and headline CPI are a rougher stand-in
+// (see computeGoldBias above).
+function renderGoldBiasPanel(host) {
+  const usdRow = LATEST_MACRO_ROWS.find(r => r.currency === 'USD') || {};
+  const g = computeGoldBias(usdRow);
+  if (g.bias == null) {
+    host.innerHTML = '<div class="empty">Needs USD policy rate and CPI YoY to compute -- fill those in on the USD Macro Workspace first.</div>';
+    return;
+  }
+  const cls = g.bias === 'Bullish' ? 'WIN' : (g.bias === 'Bearish' ? 'LOSS' : 'BE');
+  host.innerHTML = `
+    <div class="bw-card ${g.bias === 'Neutral' ? '' : 'bw-good'}">
+      <div class="bw-label">Conclusion — XAU/USD (real-rate proxy)</div>
+      <div style="font-size:14px; color:var(--text-primary); margin-top:6px; line-height:1.6;">
+        USD real yield proxy (policy rate − CPI YoY) is <span class="strong">${g.realYield}%</span> --
+        ${g.realYield < 0 ? 'negative real rates reduce the opportunity cost of holding a non-yielding asset like gold, which is historically gold-positive.' : (g.realYield < 1.5 ? 'a modest positive real rate, not a strong signal either way.' : 'a firmly positive real rate, which raises the opportunity cost of holding gold instead of yield-bearing assets.')}
+        Doesn't factor in safe-haven demand, central-bank buying, or geopolitical shocks -- treat this as one input, not the whole picture.
+      </div>
+    </div>
+    <table style="margin-top:16px;">
+      <thead><tr><th>Instrument</th><th>Bias</th></tr></thead>
+      <tbody><tr><td class="strong">XAUUSD</td><td><span class="badge ${cls}">${g.bias}</span></td></tr></tbody>
+    </table>`;
 }
 
 function renderCcySwitcher() {
   const sel = document.getElementById('ccySwitcher');
   if (!sel.options.length) {
-    sel.innerHTML = CCY_ORDER.map(c => `<option value="${c}">${c}</option>`).join('');
+    const ccyOptions = CCY_ORDER.map(c => `<option value="${c}">${c}</option>`).join('');
+    const extraOptions = EXTRA_INSTRUMENTS.map(i => `<option value="${i.key}">${i.label}</option>`).join('');
+    sel.innerHTML = ccyOptions + `<optgroup label="Other">${extraOptions}</optgroup>`;
     sel.addEventListener('change', () => {
       selectedCcy = sel.value;
       try { localStorage.setItem('sf-macro-ccy', selectedCcy); } catch (e) {}
@@ -338,7 +398,12 @@ async function loadRateCalendar() {
 
 // Only the selected currency's data is ever fetched into view/edited at once --
 // the rest sit sidelined behind the switcher instead of all rendering together.
+// No-ops for XAU/NQ/ES -- they don't have a row in the macro table (no
+// rate, CPI, etc. of their own), and onCcyChange() already hides this
+// panel entirely for them; called from a couple of other places too
+// (loadReleaseCalendar/loadRateCalendar) that don't know about that state.
 function renderMacroWorkspace(rows) {
+  if (!CCY_ORDER.includes(selectedCcy)) return;
   const byCcy = {};
   rows.forEach(r => { byCcy[r.currency] = r; });
   const row = byCcy[selectedCcy] || { currency: selectedCcy };
@@ -373,8 +438,7 @@ function renderMacroWorkspace(rows) {
 async function loadMacro() {
   LATEST_MACRO_ROWS = await (await fetch('/api/macro')).json();
   renderCcySwitcher();
-  renderMacroWorkspace(LATEST_MACRO_ROWS);
-  document.getElementById('debtPanel').style.display = selectedCcy === 'USD' ? '' : 'none';
+  onCcyChange();
 }
 
 document.getElementById('syncFredBtn').addEventListener('click', async () => {
@@ -525,10 +589,6 @@ async function loadCcyNews() {
   loadReleaseCalendar();
   loadRateCalendar();
   loadDebtSnapshot();
-  loadCcyNews();
-  document.getElementById('biasBaseLabel').textContent = selectedCcy;
-  populateCompareDropdown();
-  loadFundamentals();
   setInterval(loadCcyNews, 60000);
 })();
 </script>

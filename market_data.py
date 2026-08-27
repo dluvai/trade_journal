@@ -212,6 +212,17 @@ CURRENCY_NEWS_QUERIES = {
     "CHF": ["CHF=X"],
     "CAD": ["CAD=X"],
     "USD": ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X", "JPY=X", "CHF=X", "CAD=X"],
+    # Same tickers as SYMBOLS above -- XAU/NQ/ES aren't currencies, so none
+    # of the three go through the currency-pair fundamentals engine. Gold
+    # gets its own real-rate-proxy bias instead (see macros.html's
+    # computeGoldBias) since that's a real, if simplified, relationship;
+    # NQ/ES get news only -- equity indices don't react to macro data in
+    # the stable, one-directional way FX does, so a bias verdict here
+    # would look just as confident as the FX one while resting on much
+    # shakier ground.
+    "XAU": ["GC=F"],
+    "NQ": ["^NDX"],
+    "ES": ["^GSPC"],
 }
 
 
