@@ -1,6 +1,5 @@
 """Shared Turso (libSQL) access for the live trade-entry dashboard."""
 import os
-import threading
 import time
 from datetime import datetime
 
@@ -150,23 +149,6 @@ def _migrate_user_extended_profile_columns(conn):
 
 _schema_ready = False
 _client = None
-_client_lock = threading.Lock()
-
-
-class _LockedClient:
-    # gunicorn runs this app with --worker-class gthread --threads 4, so multiple requests can
-    # call execute() on the one shared libsql_client at the same time. Measured by hand: concurrent
-    # calls took 3-6x longer *each* than the same calls run one after another, so the underlying
-    # client isn't safely concurrent -- this lock makes access explicit instead of contended.
-    def __init__(self, client):
-        self._client = client
-
-    def execute(self, *args, **kwargs):
-        with _client_lock:
-            return self._client.execute(*args, **kwargs)
-
-    def close(self):
-        self._client.close()
 
 
 def _ensure_schema(conn):
@@ -197,7 +179,7 @@ def get_conn():
                 "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set -- this app "
                 "stores everything in Turso now, there is no local file fallback."
             )
-        _client = _LockedClient(libsql_client.create_client_sync(url=_to_https(url), auth_token=token))
+        _client = libsql_client.create_client_sync(url=_to_https(url), auth_token=token)
     _ensure_schema(_client)
     return _client
 
