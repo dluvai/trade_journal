@@ -6,6 +6,15 @@ const DC = (function () {
 
   function fmtPct(x, digits) { digits = digits === undefined ? 1 : digits; return (x >= 0 ? '+' : '') + (x * 100).toFixed(digits) + '%'; }
 
+  // Shared empty-state markup for chart/table sections with no data in the current range -- a contextual
+  // sentence instead of a bare "No data." placeholder.
+  function emptyState(message) {
+    return `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+      <span>${message}</span>
+    </div>`;
+  }
+
   // Shared gradient/glow so bars read as raised against the dark surface, not flat fills.
   function barStyle(kind) {
     if (kind === 'good') return 'background:linear-gradient(180deg, #2fe07f 0%, #0ca30c 100%); box-shadow:0 3px 16px -3px rgba(12,163,12,0.55);';
@@ -185,7 +194,7 @@ const DC = (function () {
   function renderEquity(hostId, points, drawdown) {
     const host = document.getElementById(hostId);
     if (!host) return;
-    if (!points.length) { host.innerHTML = '<div class="empty">No trades in this range.</div>'; return; }
+    if (!points.length) { host.innerHTML = emptyState('No trades in this range yet — your equity curve will appear once you log one.'); return; }
     const W = 1000, H = 280, PAD_L = 46, PAD_R = 10, PAD_T = 14, PAD_B = 26;
     const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
     const vals = points.map(p => p.cum);
@@ -322,7 +331,7 @@ const DC = (function () {
   function renderWinRateBars(hostId, groups) {
     const host = document.getElementById(hostId);
     if (!host) return;
-    if (!groups.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+    if (!groups.length) { host.innerHTML = emptyState('Not enough trades in this range to break down yet.'); return; }
     const CH = 110;
     const cols = groups.map(g => {
       const h = Math.max(2, Math.round(g.winRate * CH));
@@ -359,7 +368,7 @@ const DC = (function () {
     if (!host) return;
     const map = computeMonthGrid(trades);
     if (!map.size) {
-      host.innerHTML = '<div class="empty">No data.</div>';
+      host.innerHTML = emptyState('No trades in this range yet — monthly returns will show up here.');
       monthlyReturnYear = null;
       if (yearFilterId) document.getElementById(yearFilterId).innerHTML = '';
       return;
@@ -408,7 +417,7 @@ const DC = (function () {
   function renderBestWorstPairs(hostId, bw) {
     const host = document.getElementById(hostId);
     if (!host) return;
-    if (!bw) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+    if (!bw) { host.innerHTML = emptyState('Log a few trades to see your best and worst pairs here.'); return; }
     const cards = [
       { label: 'Best pair', title: bw.bestPair.pair, sub: `${bw.bestPair.total} trades · ${(bw.bestPair.wins / bw.bestPair.total * 100).toFixed(0)}% win rate`, value: fmtPct(bw.bestPair.pnl, 2), good: bw.bestPair.pnl >= 0 },
       { label: 'Worst pair', title: bw.worstPair.pair, sub: `${bw.worstPair.total} trades · ${(bw.worstPair.wins / bw.worstPair.total * 100).toFixed(0)}% win rate`, value: fmtPct(bw.worstPair.pnl, 2), good: bw.worstPair.pnl >= 0 },
@@ -419,7 +428,7 @@ const DC = (function () {
   function renderBestWorstTrades(hostId, bw) {
     const host = document.getElementById(hostId);
     if (!host) return;
-    if (!bw) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+    if (!bw) { host.innerHTML = emptyState('Log a few trades to see your best and worst trades here.'); return; }
     const cards = [
       { label: 'Best trade', title: bw.bestTrade.pair || '—', sub: `${bw.bestTrade.date} · ${bw.bestTrade.session || ''} · ${bw.bestTrade.direction || ''}`, value: fmtPct(bw.bestTrade.pnl, 2), good: bw.bestTrade.pnl >= 0 },
       { label: 'Worst trade', title: bw.worstTrade.pair || '—', sub: `${bw.worstTrade.date} · ${bw.worstTrade.session || ''} · ${bw.worstTrade.direction || ''}`, value: fmtPct(bw.worstTrade.pnl, 2), good: bw.worstTrade.pnl >= 0 },
@@ -501,7 +510,7 @@ const DC = (function () {
   function renderPairTable(hostId, pairs, labelHeader, extraColumns) {
     const host = document.getElementById(hostId);
     if (!host) return;
-    if (!pairs.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+    if (!pairs.length) { host.innerHTML = emptyState(`No trades to break down by ${(labelHeader || 'pair').toLowerCase()} yet.`); return; }
     extraColumns = extraColumns || [];
     const rows = pairs.map(p => {
       const wr = p.total ? p.wins / p.total : 0;
@@ -530,7 +539,7 @@ const DC = (function () {
     hooks = hooks || {};
     const host = document.getElementById(hostId);
     if (!host) return;
-    if (!trades.length) { host.innerHTML = '<div class="empty">No trades in this range.</div>'; return; }
+    if (!trades.length) { host.innerHTML = emptyState('No trades logged in this range yet.'); return; }
     const ordered = [...trades].reverse();
     const canExpand = !!(hooks.onEdit || hooks.onDelete);
     const rows = ordered.map((t, i) => {
@@ -591,7 +600,7 @@ const DC = (function () {
   function renderRRHistogram(hostId, trades) {
     const host = document.getElementById(hostId);
     if (!host) return;
-    if (!trades.length) { host.innerHTML = '<div class="empty">No data.</div>'; return; }
+    if (!trades.length) { host.innerHTML = emptyState('Not enough trades yet to show an RR distribution.'); return; }
     const buckets = RR_BUCKETS.map(b => ({ ...b, list: trades.filter(t => b.test(t.rr)) }));
     const maxCount = Math.max(1, ...buckets.map(b => b.list.length));
     const CH = 90;

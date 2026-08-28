@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Billing — SteadFast{% endblock %}
+{% block page_title %}Billing{% endblock %}
+{% block content %}
+
+{% if checkout_status == 'success' %}
+<div class="info" style="margin-bottom:16px;">Subscription started — it may take a few seconds to appear below.</div>
+{% elif checkout_status == 'cancelled' %}
+<div class="error" style="margin-bottom:16px;">Checkout was cancelled — no charge was made.</div>
+{% endif %}
+{% if checkout_error %}
+<div class="error" style="margin-bottom:16px;">Couldn't start checkout: {{ checkout_error }}</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Current Plan</h2>
+  {% if subscription %}
+  <div class="form-grid thirds">
+    <div class="field"><label>Plan</label><div>{{ tiers.get(subscription.tier_key, {}).get('label', subscription.tier_key or 'Unknown') }}</div></div>
+    <div class="field"><label>Status</label><div><span class="badge {{ 'WIN' if subscription.status == 'active' else 'LOSS' }}">{{ subscription.status }}</span></div></div>
+    <div class="field"><label>{{ 'Cancels' if subscription.cancel_at_period_end else 'Renews' }}</label><div>{{ subscription.current_period_end[:10] if subscription.current_period_end else '—' }}</div></div>
+  </div>
+  {% else %}
+  <div class="empty">No active plan yet — choose one below.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Plans</h2>
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+    {% for key, tier in tiers.items() %}
+    <div class="bw-card" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="bw-label">{{ tier.label }}</div>
+      <div class="bw-value">${{ tier.monthly_usd }}<span style="font-size:12px; color:var(--text-muted); font-weight:400;">/mo</span></div>
+      <form method="post" action="{{ url_for('billing_checkout') }}">
+        <input type="hidden" name="tier" value="{{ key }}">
+        <button type="submit" class="btn-primary" {{ 'disabled' if subscription and subscription.tier_key == key and subscription.status == 'active' else '' }}>
+          {{ 'Current plan' if subscription and subscription.tier_key == key and subscription.status == 'active' else 'Choose ' ~ tier.label }}
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

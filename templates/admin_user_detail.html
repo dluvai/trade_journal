@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ target_user.username }} — Admin — SteadFast{% endblock %}
+{% block page_title %}Admin{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('admin_dashboard') }}" style="font-size:12.5px; color:var(--info); text-decoration:none;">&larr; Back to search</a>
+
+<div class="panel" style="margin-top:12px;">
+  <h2>{{ target_user.username }}{% if target_user.is_admin %} <span class="badge WIN">admin</span>{% endif %}</h2>
+  <div class="form-grid thirds">
+    <div class="field"><label>Name</label><div>{{ (target_user.first_name or '') ~ ' ' ~ (target_user.last_name or '') }}</div></div>
+    <div class="field"><label>Email</label><div>{{ target_user.email or '—' }}{% if target_user.email and not target_user.email_verified %} <span class="badge FLAG">unverified</span>{% endif %}</div></div>
+    <div class="field"><label>Member Since</label><div>{{ target_user.created_at[:10] }}</div></div>
+  </div>
+  <div class="form-grid thirds" style="margin-top:4px;">
+    <div class="field"><label>Trades</label><div class="strong">{{ diagnostics.trade_count }}</div></div>
+    <div class="field"><label>Last Trade</label><div>{{ diagnostics.last_trade_date or '—' }}</div></div>
+    <div class="field"><label>Accounts / Strategies</label><div>{{ diagnostics.account_count }} / {{ diagnostics.strategy_count }}</div></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Subscription</h2>
+  {% if subscription %}
+  <div class="form-grid thirds">
+    <div class="field"><label>Plan</label><div>{{ plans_by_key.get(subscription.tier_key, {}).get('label', subscription.tier_key or 'Unknown') }}</div></div>
+    <div class="field"><label>Status</label><div><span class="badge {{ 'WIN' if subscription.status == 'active' else 'LOSS' }}">{{ subscription.status }}</span></div></div>
+    <div class="field"><label>{{ 'Cancels' if subscription.cancel_at_period_end else 'Renews' }}</label><div>{{ subscription.current_period_end[:10] if subscription.current_period_end else '—' }}</div></div>
+  </div>
+  {% if subscription.status == 'active' %}
+  <button type="button" class="iconbtn small danger" id="cancelSubBtn" data-sub-id="{{ subscription.stripe_subscription_id }}">Cancel subscription</button>
+  {% endif %}
+  {% else %}
+  <div class="empty">No subscription on file.</div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Payment Methods</h2>
+  {% if payment_methods %}
+  <div style="display:flex; flex-direction:column; gap:8px;">
+    {% for pm in payment_methods %}
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid var(--border); border-radius:8px;">
+      <span>{{ pm.brand | capitalize }} •••• {{ pm.last4 }} <span style="color:var(--text-muted);">exp {{ pm.exp_month }}/{{ pm.exp_year }}</span></span>
+      <button type="button" class="iconbtn small danger" data-delete-pm="{{ pm.id }}">Remove</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">No card on file.</div>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  const userId = {{ target_user.id }};
+
+  const cancelBtn = document.getElementById('cancelSubBtn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async () => {
+      if (!confirm('Cancel this subscription at the end of the current period?')) return;
+      try {
+        await DC.apiSend('POST', `/admin/users/${userId}/cancel-subscription`, {});
+        location.reload();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  }
+
+  document.querySelectorAll('[data-delete-pm]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove this card?')) return;
+      try {
+        await DC.apiSend('POST', `/admin/users/${userId}/payment-methods/${btn.dataset.deletePm}/delete`, {});
+        location.reload();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

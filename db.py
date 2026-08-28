@@ -1,4 +1,5 @@
 """Shared Turso (libSQL) access for the live trade-entry dashboard."""
+import json
 import os
 import time
 from datetime import datetime
@@ -53,6 +54,31 @@ SCHEMA_STATEMENTS = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        stripe_subscription_id TEXT NOT NULL UNIQUE,
+        stripe_price_id TEXT,
+        tier_key TEXT,
+        status TEXT NOT NULL,
+        current_period_end TEXT,
+        cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        description TEXT,
+        features TEXT,
+        unit_amount_cents INTEGER NOT NULL,
+        stripe_product_id TEXT NOT NULL,
+        stripe_price_id TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""",
@@ -147,6 +173,17 @@ def _migrate_user_extended_profile_columns(conn):
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {coltype}")
 
 
+def _migrate_user_billing_columns(conn):
+    # is_admin is a real permission bit, not an env-var/hardcoded-id check -- deliberate even
+    # though only one account will ever have it set today. stripe_customer_id is created lazily
+    # on first checkout attempt, not at signup, since most users may never subscribe.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)").rows}
+    additions = {"is_admin": "INTEGER NOT NULL DEFAULT 0", "stripe_customer_id": "TEXT"}
+    for col, coltype in additions.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {coltype}")
+
+
 _schema_ready = False
 _client = None
 
@@ -164,6 +201,7 @@ def _ensure_schema(conn):
     _migrate_user_id_columns(conn)
     _migrate_user_profile_columns(conn)
     _migrate_user_extended_profile_columns(conn)
+    _migrate_user_billing_columns(conn)
     _schema_ready = True
 
 
@@ -196,7 +234,7 @@ def derive_result(rr):
     # Result is derived from realized R-multiple (not raw PnL), and always computed -- never manually overridden.
     if rr < 0:
         return "LOSS"
-    if rr <= 1:
+    if rr == 0:
         return "BE"
     return "WIN"
 
@@ -612,3 +650,142 @@ def reset_password(user_id, password_hash):
 def update_password(user_id, password_hash):
     conn = get_conn()
     conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
+
+
+# ---------- billing ----------
+
+def set_admin(user_id, is_admin=True):
+    conn = get_conn()
+    conn.execute("UPDATE users SET is_admin=? WHERE id=?", (1 if is_admin else 0, user_id))
+
+
+def set_stripe_customer_id(user_id, stripe_customer_id):
+    conn = get_conn()
+    conn.execute("UPDATE users SET stripe_customer_id=? WHERE id=?", (stripe_customer_id, user_id))
+
+
+def get_user_by_stripe_customer_id(stripe_customer_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM users WHERE stripe_customer_id=?", (stripe_customer_id,)).rows
+    return rows[0].asdict() if rows else None
+
+
+def search_users(query):
+    conn = get_conn()
+    like = f"%{query}%"
+    rows = conn.execute(
+        """SELECT * FROM users WHERE username LIKE ? OR email LIKE ? OR first_name LIKE ? OR last_name LIKE ?
+           ORDER BY created_at DESC LIMIT 50""",
+        (like, like, like, like),
+    ).rows
+    return [r.asdict() for r in rows]
+
+
+def user_diagnostics(user_id):
+    conn = get_conn()
+    trades = conn.execute("SELECT COUNT(*) AS n, MAX(date) AS last_date FROM trades WHERE user_id=?", (user_id,)).rows[0]
+    accounts = conn.execute("SELECT COUNT(*) AS n FROM trading_accounts WHERE user_id=?", (user_id,)).rows[0]
+    strategies = conn.execute("SELECT COUNT(*) AS n FROM strategies WHERE user_id=?", (user_id,)).rows[0]
+    return {
+        "trade_count": trades["n"],
+        "last_trade_date": trades["last_date"],
+        "account_count": accounts["n"],
+        "strategy_count": strategies["n"],
+    }
+
+
+def upsert_subscription(user_id, stripe_subscription_id, stripe_price_id, tier_key, status,
+                         current_period_end, cancel_at_period_end):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO subscriptions
+               (user_id, stripe_subscription_id, stripe_price_id, tier_key, status,
+                current_period_end, cancel_at_period_end, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(stripe_subscription_id) DO UPDATE SET
+               stripe_price_id=excluded.stripe_price_id, tier_key=excluded.tier_key,
+               status=excluded.status, current_period_end=excluded.current_period_end,
+               cancel_at_period_end=excluded.cancel_at_period_end, updated_at=excluded.updated_at""",
+        (user_id, stripe_subscription_id, stripe_price_id, tier_key, status,
+         current_period_end, 1 if cancel_at_period_end else 0, now, now),
+    )
+
+
+def get_subscription_for_user(user_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM subscriptions WHERE user_id=? ORDER BY created_at DESC LIMIT 1", (user_id,)
+    ).rows
+    return rows[0].asdict() if rows else None
+
+
+# ---------- plans (global, admin-managed) ----------
+
+def _plan_row_to_dict(row):
+    d = row.asdict()
+    d["features"] = json.loads(d["features"] or "[]")
+    return d
+
+
+def list_plans(include_archived=False):
+    conn = get_conn()
+    if include_archived:
+        rows = conn.execute("SELECT * FROM plans ORDER BY created_at ASC").rows
+    else:
+        rows = conn.execute("SELECT * FROM plans WHERE archived=0 ORDER BY created_at ASC").rows
+    return [_plan_row_to_dict(r) for r in rows]
+
+
+def subscription_kpis():
+    # Joins on tier_key (the stable slug), not stripe_price_id, since a price stops matching once its plan is archived/recreated.
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT COUNT(*) AS active_count, COALESCE(SUM(plans.unit_amount_cents), 0) AS mrr_cents
+           FROM subscriptions
+           JOIN plans ON plans.key = subscriptions.tier_key
+           WHERE subscriptions.status = 'active'"""
+    ).rows[0]
+    return {"active_count": row["active_count"], "mrr_cents": row["mrr_cents"]}
+
+
+def get_plan_by_key(key):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM plans WHERE key=?", (key,)).rows
+    return _plan_row_to_dict(rows[0]) if rows else None
+
+
+def get_plan_by_id(plan_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM plans WHERE id=?", (plan_id,)).rows
+    return _plan_row_to_dict(rows[0]) if rows else None
+
+
+def create_plan(key, label, description, features, unit_amount_cents, stripe_product_id, stripe_price_id):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    rs = conn.execute(
+        """INSERT INTO plans
+               (key, label, description, features, unit_amount_cents, stripe_product_id, stripe_price_id,
+                archived, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+        (key, label, description, json.dumps(features or []), unit_amount_cents,
+         stripe_product_id, stripe_price_id, now, now),
+    )
+    return rs.last_insert_rowid
+
+
+def update_plan(plan_id, label, description, features):
+    # Display-copy-only: price/product/key are immutable post-creation (Stripe Prices can't change amount).
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    conn.execute(
+        "UPDATE plans SET label=?, description=?, features=?, updated_at=? WHERE id=?",
+        (label, description, json.dumps(features or []), now, plan_id),
+    )
+
+
+def archive_plan(plan_id):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    conn.execute("UPDATE plans SET archived=1, updated_at=? WHERE id=?", (now, plan_id))

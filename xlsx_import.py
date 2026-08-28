@@ -88,6 +88,11 @@ def extract_sheet(ws, year):
         d = parse_date(raw_date)
         if d is None:
             continue
+        # Weekend dates (no real session) roll onto the nearest trading day: Sat -> Fri, Sun -> Mon.
+        if d.weekday() == 5:
+            d -= timedelta(days=1)
+        elif d.weekday() == 6:
+            d += timedelta(days=1)
         result = ws.cell(row=r, column=col_result).value
         if not result:
             continue

@@ -26,6 +26,12 @@ Local secrets, without retyping them every session:
         ANTHROPIC_API_KEY=your-anthropic-key
         RESEND_API_KEY=your-resend-key
         RESEND_FROM_EMAIL=onboarding@resend.dev
+        STRIPE_SECRET_KEY=sk_test_...
+        STRIPE_PUBLISHABLE_KEY=pk_test_...
+        STRIPE_WEBHOOK_SECRET=whsec_...
+        STRIPE_PRICE_ESSENTIAL=price_...
+        STRIPE_PRICE_PRO=price_...
+        STRIPE_PRICE_ULTRA=price_...
     Then just run `python server.py` -- no PowerShell $env: commands needed.
     A real environment variable set in the shell always wins over .env, so
     this is purely a local convenience, not a replacement for how Render
@@ -48,6 +54,7 @@ import auth
 import auth_pages
 import auto_sync
 import backup
+import billing
 import calendar_view
 import countries
 import db
@@ -90,6 +97,7 @@ app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 PUBLIC_ENDPOINTS = {
     "index", "login", "signup", "verify_email", "resend_verification_code",
     "verify_email_resume", "forgot_password", "reset_password",
+    "stripe_webhook",  # Stripe has no session cookie -- its signature header is the auth instead.
 }
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -524,11 +532,21 @@ NAV_ITEMS = [
     {"key": "calendar", "label": "Calendar", "endpoint": "calendar_page"},
     {"key": "strategy", "label": "Strategy", "endpoint": "strategy_page"},
 ]
+ADMIN_NAV_ITEMS = [
+    {"key": "admin_users", "label": "Users", "endpoint": "admin_dashboard"},
+    {"key": "admin_products", "label": "Products", "endpoint": "admin_products"},
+]
 
 
 @app.context_processor
 def inject_nav():
-    return {"nav_items": NAV_ITEMS}
+    items = list(NAV_ITEMS)
+    user_id = session.get("user_id")
+    if user_id:
+        user = db.get_user_by_id(user_id)
+        if user and user.get("is_admin"):
+            items.extend(ADMIN_NAV_ITEMS)
+    return {"nav_items": items}
 
 
 @app.get("/overview")
@@ -857,6 +875,216 @@ def api_analyze():
     except Exception as e:
         return jsonify({"error": f"AI call failed: {e}"}), 502
     return jsonify({"analysis": analysis})
+
+
+# ---------- billing (customer-facing) ----------
+
+def _billing_plans():
+    # monthly_usd is precomputed here (not in the template) so billing.html's existing
+    # {{ tier.monthly_usd }} usage needs no change now that plans come from the db, not a dict literal.
+    return {p["key"]: {**p, "monthly_usd": p["unit_amount_cents"] // 100} for p in db.list_plans()}
+
+
+@app.get("/billing")
+def billing_page():
+    user = _current_user_or_none()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template(
+        "billing.html", active_page="billing", user=db.public_user_dict(user),
+        subscription=db.get_subscription_for_user(user["id"]), tiers=_billing_plans(),
+        checkout_status=request.args.get("checkout"),
+    )
+
+
+@app.post("/billing/checkout")
+def billing_checkout():
+    user = _current_user_or_none()
+    if not user:
+        return redirect(url_for("login"))
+    tier_key = request.form.get("tier")
+    plan = db.get_plan_by_key(tier_key)
+    if not plan or plan["archived"]:
+        return jsonify({"error": "Unknown plan"}), 400
+    try:
+        checkout_session = billing.create_checkout_session(
+            user, plan,
+            success_url=url_for("billing_page", checkout="success", _external=True),
+            cancel_url=url_for("billing_page", checkout="cancelled", _external=True),
+        )
+    except Exception as e:
+        return render_template(
+            "billing.html", active_page="billing", user=db.public_user_dict(user),
+            subscription=db.get_subscription_for_user(user["id"]), tiers=_billing_plans(),
+            checkout_status=None, checkout_error=str(e),
+        ), 502
+    return redirect(checkout_session.url)
+
+
+@app.post("/webhooks/stripe")
+def stripe_webhook():
+    # Raw bytes, not request.get_json() -- Stripe's signature is computed over the exact request body.
+    payload = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature", "")
+    try:
+        event = billing.construct_webhook_event(payload, sig_header)
+    except Exception:
+        return jsonify({"error": "invalid signature"}), 400
+    billing.handle_webhook_event(event)
+    return jsonify({"ok": True})
+
+
+# ---------- admin ----------
+
+def _require_admin():
+    # Re-fetches from db rather than trusting a session flag, so a demoted admin loses access
+    # immediately instead of whenever their session cookie happens to expire.
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    user = db.get_user_by_id(user_id)
+    if not user or not user.get("is_admin"):
+        return None
+    return user
+
+
+@app.get("/admin")
+def admin_dashboard():
+    if not _require_admin():
+        return redirect(url_for("overview"))
+    query = request.args.get("q", "").strip()
+    users = db.search_users(query) if query else []
+    return render_template("admin.html", active_page="admin_users", query=query, users=users)
+
+
+@app.get("/admin/users/<int:user_id>")
+def admin_user_detail(user_id):
+    if not _require_admin():
+        return redirect(url_for("overview"))
+    target = db.get_user_by_id(user_id)
+    if not target:
+        return redirect(url_for("admin_dashboard"))
+    payment_methods = billing.list_payment_methods(target.get("stripe_customer_id"))
+    plans_by_key = {p["key"]: p for p in db.list_plans(include_archived=True)}
+    return render_template(
+        "admin_user_detail.html", active_page="admin_users",
+        target_user=db.public_user_dict(target), diagnostics=db.user_diagnostics(user_id),
+        subscription=db.get_subscription_for_user(user_id), payment_methods=payment_methods,
+        plans_by_key=plans_by_key,
+    )
+
+
+@app.post("/admin/users/<int:user_id>/cancel-subscription")
+def admin_cancel_subscription(user_id):
+    if not _require_admin():
+        return jsonify({"error": "forbidden"}), 403
+    subscription = db.get_subscription_for_user(user_id)
+    if not subscription:
+        return jsonify({"error": "No subscription on file"}), 400
+    billing.cancel_subscription(subscription["stripe_subscription_id"])
+    return jsonify({"ok": True})
+
+
+@app.post("/admin/users/<int:user_id>/payment-methods/<pm_id>/delete")
+def admin_delete_payment_method(user_id, pm_id):
+    if not _require_admin():
+        return jsonify({"error": "forbidden"}), 403
+    billing.detach_payment_method(pm_id)
+    return jsonify({"ok": True})
+
+
+# ---------- admin: plans ----------
+
+PLAN_KEY_RE = re.compile(r"^[a-z0-9_-]+$")
+
+# Single source of truth for what a plan's feature checklist can offer -- matches capabilities the app actually has.
+PLAN_FEATURE_OPTIONS = [
+    "Unlimited trade journaling",
+    "Multiple trading accounts",
+    "Strategy performance tracking",
+    "AI bias check",
+    "Macro & fundamentals dashboard",
+    "Economic calendar & rate tracker",
+    "CSV/Excel trade import",
+    "Priority support",
+]
+
+
+@app.get("/admin/products")
+def admin_products():
+    if not _require_admin():
+        return redirect(url_for("overview"))
+    return render_template(
+        "admin_products.html", active_page="admin_products",
+        plans=db.list_plans(include_archived=True), kpis=db.subscription_kpis(),
+        feature_options=PLAN_FEATURE_OPTIONS,
+    )
+
+
+@app.get("/api/admin/plans")
+def api_list_plans():
+    if not _require_admin():
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify(db.list_plans(include_archived=True))
+
+
+@app.post("/api/admin/plans")
+def api_create_plan():
+    if not _require_admin():
+        return jsonify({"error": "forbidden"}), 403
+    body = request.get_json(force=True) or {}
+    key = (body.get("key") or "").strip().lower()
+    label = (body.get("label") or "").strip()
+    if not key or not PLAN_KEY_RE.match(key):
+        return jsonify({"error": "Key must be lowercase letters, numbers, - or _"}), 400
+    if not label:
+        return jsonify({"error": "Label is required"}), 400
+    if db.get_plan_by_key(key):
+        return jsonify({"error": "A plan with that key already exists"}), 400
+    try:
+        unit_amount_cents = int(body.get("unit_amount_cents"))
+        if unit_amount_cents <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "Price must be a positive number"}), 400
+    description = body.get("description") or ""
+    features = body.get("features") or []
+    try:
+        stripe_product_id, stripe_price_id = billing.create_stripe_plan(label, description, unit_amount_cents)
+    except Exception as e:
+        return jsonify({"error": f"Stripe error: {e}"}), 502
+    new_id = db.create_plan(key, label, description, features, unit_amount_cents, stripe_product_id, stripe_price_id)
+    return jsonify({"id": new_id}), 201
+
+
+@app.put("/api/admin/plans/<int:plan_id>")
+def api_update_plan(plan_id):
+    if not _require_admin():
+        return jsonify({"error": "forbidden"}), 403
+    plan = db.get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({"error": "Plan not found"}), 404
+    body = request.get_json(force=True) or {}
+    label = (body.get("label") or "").strip()
+    if not label:
+        return jsonify({"error": "Label is required"}), 400
+    db.update_plan(plan_id, label, body.get("description") or "", body.get("features") or [])
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/plans/<int:plan_id>/archive")
+def api_archive_plan(plan_id):
+    if not _require_admin():
+        return jsonify({"error": "forbidden"}), 403
+    plan = db.get_plan_by_id(plan_id)
+    if not plan:
+        return jsonify({"error": "Plan not found"}), 404
+    try:
+        billing.archive_stripe_plan(plan["stripe_price_id"], plan["stripe_product_id"])
+    except Exception as e:
+        return jsonify({"error": f"Stripe error: {e}"}), 502
+    db.archive_plan(plan_id)
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

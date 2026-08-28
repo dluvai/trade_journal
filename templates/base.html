@@ -32,12 +32,20 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
       {% elif item.key == 'strategy' %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
+      {% elif item.key == 'admin_users' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>
+      {% elif item.key == 'admin_products' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.24L4 3a1 1 0 00-1 1l.24 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.35-4.35a2 2 0 000-2.83z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
       {% endif %}
       <span>{{ item.label }}</span>
     </a>
     {% endfor %}
   </div>
   <div class="sidebar-footer">
+    <a class="nav-item {{ 'active' if active_page == 'billing' else '' }}" href="{{ url_for('billing_page') }}" aria-label="Billing">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+      <span>Billing</span>
+    </a>
     <a class="nav-item {{ 'active' if active_page == 'profile' else '' }}" href="{{ url_for('profile') }}" aria-label="Profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       <span>Profile</span>
@@ -81,18 +89,18 @@
           <input type="hidden" name="session" value="London">
           <div id="tradeSessionSelect"></div>
         </div>
-        <div class="field"><label>Pair</label><input type="text" name="pair" placeholder="EURUSD" required></div>
+        <div class="field"><label>Pair</label><input type="text" name="pair" required></div>
         <div class="field"><label>Direction</label>
           <input type="hidden" name="direction" value="Long">
           <div id="tradeDirectionSelect"></div>
         </div>
       </div>
       <div class="form-grid thirds">
-        <div class="field"><label>Risk %</label><input type="number" step="0.01" name="risk" placeholder="1.5"></div>
-        <div class="field"><label>RR</label><input type="number" step="0.01" name="rr" placeholder="2.0" required></div>
-        <div class="field"><label>PnL %</label><input type="number" step="0.01" name="pnl" placeholder="3.0" required></div>
+        <div class="field"><label>Risk %</label><input type="number" step="0.01" name="risk"></div>
+        <div class="field"><label>RR</label><input type="number" step="0.01" name="rr" required></div>
+        <div class="field"><label>PnL %</label><input type="number" step="0.01" name="pnl" required></div>
       </div>
-      <div class="empty" style="text-align:left; padding:0 0 12px; font-size:11.5px;">Result (WIN/LOSS/BE) is set automatically from RR: below 0 is a loss, 0 to 1 is breakeven, above 1 is a win.</div>
+      <div class="empty" style="text-align:left; padding:0 0 12px; font-size:11.5px;">Result (WIN/LOSS/BE) is set automatically from RR: below 0 is a loss, exactly 0 is breakeven, above 0 is a win.</div>
       <div class="form-grid halves">
         <div class="field"><label>Strategy</label>
           <input type="hidden" name="strategy_id" value="">
@@ -105,12 +113,12 @@
       </div>
       <div class="field" style="margin-bottom:12px;">
         <label>Notes</label>
-        <textarea name="notes" rows="3" placeholder="What happened, why you took it, lessons..."></textarea>
+        <textarea name="notes" rows="3"></textarea>
       </div>
       <div class="form-grid thirds">
-        <div class="field"><label>Daily chart link</label><input type="url" name="chart_daily" placeholder="https://www.tradingview.com/x/..."></div>
-        <div class="field"><label>4H chart link</label><input type="url" name="chart_4h" placeholder="https://www.tradingview.com/x/..."></div>
-        <div class="field"><label>30M chart link</label><input type="url" name="chart_30m" placeholder="https://www.tradingview.com/x/..."></div>
+        <div class="field"><label>Daily chart link</label><input type="url" name="chart_daily"></div>
+        <div class="field"><label>4H chart link</label><input type="url" name="chart_4h"></div>
+        <div class="field"><label>30M chart link</label><input type="url" name="chart_30m"></div>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn-primary">Save trade</button>
@@ -127,7 +135,7 @@
     <form id="accountForm">
       <div class="field" style="margin-bottom:12px;">
         <label>Name</label>
-        <input type="text" name="name" placeholder="e.g. Prop Firm A" required>
+        <input type="text" name="name" required>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn-primary">Save</button>

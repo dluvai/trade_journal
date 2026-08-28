@@ -15,19 +15,18 @@ before passing it to render().
 
 _STYLE = """
   html,body{margin:0;height:100%;color:#f5f4f2;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-    background:radial-gradient(circle at 25% 12%, rgba(59,130,246,0.14), transparent 55%),
-      linear-gradient(135deg,#0c0c0e 0%,#0d1b2e 100%);
+    color-scheme:dark;
+    background:radial-gradient(circle at 25% 12%, rgba(193,127,62,0.12), transparent 55%),
+      linear-gradient(135deg,#060607 0%,#08080a 100%);
     background-attachment:fixed,fixed;}
   .auth-shell{display:flex;min-height:100vh;}
   .auth-art{flex:1.7;position:relative;overflow:hidden;border-right:1px solid rgba(245,244,242,0.08);
     background-image:
+      radial-gradient(circle at 30% 20%,rgba(193,127,62,0.14),transparent 55%),
       linear-gradient(rgba(245,244,242,0.05) 1px,transparent 1px),
       linear-gradient(90deg,rgba(245,244,242,0.05) 1px,transparent 1px);
-    background-size:34px 34px;
+    background-size:cover,34px 34px,34px 34px;
     background-position:center;}
-  .auth-art::before{content:"";position:absolute;inset:0;
-    background:radial-gradient(circle at 30% 20%,rgba(59,130,246,0.16),transparent 55%);
-    pointer-events:none;}
   .auth-demo-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     padding:88px 44px 220px;box-sizing:border-box;}
 
@@ -52,12 +51,12 @@ _STYLE = """
   .demo-type{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:15.5px;color:#f5f4f2;
     display:inline-block;overflow:hidden;white-space:nowrap;width:0;transition:width .45s ease;
     border-right:2px solid transparent;}
-  .demo-type.filled{border-right-color:#3b82f6;}
-  .demo-save-btn{width:100%;margin-top:24px;padding:13px;border-radius:9px;border:none;color:#fff;
+  .demo-type.filled{border-right-color:#c17f3e;}
+  .demo-save-btn{width:100%;margin-top:24px;padding:13px;border-radius:9px;border:1px solid rgba(214,140,74,0.4);color:#f0d9c0;
     font-weight:700;font-size:15px;font-family:inherit;cursor:default;
-    background:linear-gradient(135deg,#93c5fd 0%,#3b82f6 55%,#1d4ed8 100%);
+    background:linear-gradient(135deg,#3a2c22 0%,#1c1512 55%,#0a0807 100%);
     transition:transform .15s ease,box-shadow .15s ease;}
-  .demo-save-btn.clicked{transform:scale(.96);box-shadow:0 0 0 7px rgba(59,130,246,0.22);}
+  .demo-save-btn.clicked{transform:scale(.96);box-shadow:0 0 0 7px rgba(193,127,62,0.22);}
   .demo-form.hide{opacity:0;transform:translateY(-12px);}
   .demo-dash{opacity:0;transform:translateY(12px);}
   .demo-dash.show{opacity:1;transform:translateY(0);}
@@ -67,7 +66,7 @@ _STYLE = """
   .demo-tile .v{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:19px;font-weight:600;margin-top:5px;}
   .demo-tile .v.good{color:#45c988;}
   .demo-chart{width:100%;height:92px;margin-bottom:20px;display:block;}
-  .demo-chart-base{fill:none;stroke:#3b82f6;stroke-width:2;opacity:.45;}
+  .demo-chart-base{fill:none;stroke:#c17f3e;stroke-width:2;opacity:.45;}
   .demo-chart-new{fill:none;stroke:#45c988;stroke-width:2.5;stroke-linecap:round;
     stroke-dasharray:60;stroke-dashoffset:60;transition:stroke-dashoffset .6s ease;}
   .demo-chart-new.drawn{stroke-dashoffset:0;}
@@ -80,9 +79,9 @@ _STYLE = """
 
   .auth-art-inner{position:absolute;bottom:64px;left:32px;right:32px;z-index:2;}
   .auth-brand-mark{display:flex;align-items:center;gap:16px;margin-bottom:14px;}
-  .auth-brand-mark svg{width:46px;height:46px;padding:10px;border-radius:13px;flex:none;color:#fff;box-sizing:border-box;
-    background:linear-gradient(135deg,#93c5fd 0%,#3b82f6 55%,#1d4ed8 100%);
-    box-shadow:0 10px 26px -8px rgba(59,130,246,0.55);}
+  .auth-brand-mark svg{width:46px;height:46px;padding:10px;border-radius:13px;flex:none;color:#1a1210;box-sizing:border-box;
+    background:linear-gradient(135deg,#b97b3f 0%,#6b3f1d 100%);
+    box-shadow:0 10px 26px -8px rgba(193,127,62,0.55);}
   .auth-art-inner h2{font-size:46px;margin:0;letter-spacing:-0.01em;line-height:1;}
   .auth-art-inner p{font-size:14px;color:#a3a0a6;margin:0;}
   .auth-form-col{flex:1;display:flex;align-items:center;justify-content:center;padding:24px 64px;box-sizing:border-box;}
@@ -94,18 +93,18 @@ _STYLE = """
   .sub{font-size:13.5px;color:#a3a0a6;margin:0 0 20px;}
   input,select{width:100%;background:rgba(245,244,242,0.06);border:1px solid rgba(245,244,242,0.14);border-radius:8px;color:#f5f4f2;
     padding:11px 13px;font-size:14.5px;box-sizing:border-box;margin-bottom:13px;}
-  input:focus,select:focus{outline:none;border-color:#3b82f6;}
+  input:focus,select:focus{outline:none;border-color:#c17f3e;}
   select option{background:#1c1b1f;color:#f5f4f2;}
-  button{width:100%;background:linear-gradient(135deg,#93c5fd 0%,#3b82f6 55%,#1d4ed8 100%);
-    border:none;border-radius:9px;color:#fff;font-weight:700;padding:12px;
+  button{width:100%;background:linear-gradient(135deg,#3a2c22 0%,#1c1512 55%,#0a0807 100%);
+    border:1px solid rgba(214,140,74,0.4);border-radius:9px;color:#f0d9c0;font-weight:700;padding:12px;
     font-size:14.5px;cursor:pointer;transition:filter .15s ease,transform .15s ease;}
-  button:hover{filter:brightness(1.08);}
+  button:hover{filter:brightness(1.3);}
   button:active{transform:translateY(1px);}
   button.secondary{background:rgba(245,244,242,0.08);color:#f5f4f2;font-weight:600;}
   .error{color:#f0837e;font-size:12.5px;margin-bottom:10px;}
   .info{color:#6fd3a6;font-size:12.5px;margin-bottom:10px;}
   .links{margin-top:14px;font-size:12.5px;text-align:center;}
-  .links a{color:#7fb0f7;text-decoration:none;}
+  .links a{color:#e0a868;text-decoration:none;}
   .links a:hover{text-decoration:underline;}
   form + form{margin-top:10px;}
   @media (max-width:760px){.auth-art{display:none;} .auth-form-col{justify-content:center;padding:16px;}}

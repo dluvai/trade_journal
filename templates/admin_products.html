@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Products — SteadFast{% endblock %}
+{% block content %}
+
+<div class="tiles" style="margin-bottom:14px;">
+  <div class="tile"><div class="label">MRR</div><div class="value">${{ '{:,}'.format(kpis.mrr_cents // 100) }}</div></div>
+  <div class="tile"><div class="label">Active Subscribers</div><div class="value">{{ kpis.active_count }}</div></div>
+</div>
+
+<div class="panel">
+  <div class="form-actions" style="margin-bottom:16px;">
+    <button class="btn-primary" id="createPlanBtn">+ Create Plan</button>
+  </div>
+  <div id="plansList"></div>
+</div>
+
+{% endblock %}
+{% block modals %}
+<div class="modal-backdrop hidden" id="planModalBackdrop">
+  <div class="modal">
+    <h2 id="planFormTitle">Create Plan</h2>
+    <form id="planForm">
+      <div class="form-grid halves">
+        <div class="field">
+          <label>Key</label>
+          <input type="text" name="key" pattern="[a-z0-9_-]+" required>
+        </div>
+        <div class="field">
+          <label>Price (USD/mo)</label>
+          <input type="number" name="monthly_usd" min="1" step="1" required>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Label</label>
+        <input type="text" name="label" required>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Description</label>
+        <textarea name="description" rows="2"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Features</label>
+        <div class="mini-select" id="featurePicker">
+          <button type="button" class="mini-select-trigger" id="featurePickerTrigger">
+            <span id="featurePickerLabel">Select features</span>
+            <span class="account-filter-caret">▾</span>
+          </button>
+          <div class="mini-select-popover" id="featurePickerPopover">
+            {% for f in feature_options %}
+            <label class="mini-select-option" style="display:flex; align-items:center; gap:9px; cursor:pointer;">
+              <input type="checkbox" value="{{ f }}" class="feature-checkbox" style="width:14px; height:14px; margin:0; accent-color:var(--series-1); flex:none;">
+              {{ f }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div id="planKeyPriceNote" class="empty" style="display:none; text-align:left; padding:0 0 12px; font-size:11.5px;">Key and price can't be changed after creation -- Stripe prices are immutable. Archive this plan and create a new one instead.</div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Save</button>
+        <button type="button" class="iconbtn" id="cancelPlanForm">Cancel</button>
+        <span id="planFormError" style="color:var(--critical); font-size:12px;"></span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let ALL_PLANS = [];
+
+function renderPlansList(list) {
+  const host = document.getElementById('plansList');
+  if (!list.length) { host.innerHTML = '<div class="empty">No plans yet — click "+ Create Plan" to add one.</div>'; return; }
+  host.innerHTML = `<div class="grid3">${list.map(p => `
+    <div class="panel">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <h2 style="margin:0;">${p.label}</h2>
+        ${p.archived ? '<span class="badge LOSS">archived</span>' : ''}
+      </div>
+      <div class="bw-value" style="margin-top:10px;">$${Math.round(p.unit_amount_cents / 100)}<span style="font-size:12px; color:var(--text-muted); font-weight:400;">/mo</span></div>
+      <div style="font-size:12.5px; color:var(--text-secondary); margin-top:8px;">${p.description || ''}</div>
+      ${p.features.length ? `<ul style="list-style:none; margin:14px 0; padding:0; display:flex; flex-direction:column; gap:7px;">
+        ${p.features.map(f => `<li style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:7px;">
+          <svg style="width:13px; height:13px; flex:none;" viewBox="0 0 24 24" fill="none" stroke="var(--good)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>${f}</li>`).join('')}
+      </ul>` : ''}
+      <div class="form-actions" style="border-top:1px solid var(--border); padding-top:12px; margin-top:4px;">
+        <button class="iconbtn small" data-edit-plan="${p.id}">Edit</button>
+        ${p.archived ? '' : `<button class="iconbtn small danger" data-archive-plan="${p.id}">Archive</button>`}
+      </div>
+    </div>`).join('')}</div>`;
+
+  host.querySelectorAll('[data-edit-plan]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const plan = ALL_PLANS.find(p => String(p.id) === btn.dataset.editPlan);
+      if (plan) openPlanForm(plan);
+    });
+  });
+  host.querySelectorAll('[data-archive-plan]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Archive this plan? It stops appearing for new signups, but existing subscribers keep their current billing.')) return;
+      try {
+        await DC.apiSend('POST', `/api/admin/plans/${btn.dataset.archivePlan}/archive`, {});
+        loadPlans();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+async function loadPlans() {
+  const r = await fetch('/api/admin/plans');
+  ALL_PLANS = await r.json();
+  renderPlansList(ALL_PLANS);
+}
+
+const planModalBackdrop = document.getElementById('planModalBackdrop');
+const planForm = document.getElementById('planForm');
+const planFormError = document.getElementById('planFormError');
+const planFormTitle = document.getElementById('planFormTitle');
+const planKeyPriceNote = document.getElementById('planKeyPriceNote');
+const featurePicker = document.getElementById('featurePicker');
+const featurePickerTrigger = document.getElementById('featurePickerTrigger');
+const featurePickerLabel = document.getElementById('featurePickerLabel');
+const featureCheckboxes = [...document.querySelectorAll('.feature-checkbox')];
+let editingPlanId = null;
+
+function updateFeaturePickerLabel() {
+  const n = featureCheckboxes.filter(cb => cb.checked).length;
+  featurePickerLabel.textContent = n ? `${n} feature${n === 1 ? '' : 's'} selected` : 'Select features';
+}
+featureCheckboxes.forEach(cb => cb.addEventListener('change', updateFeaturePickerLabel));
+featurePickerTrigger.addEventListener('click', () => featurePicker.classList.toggle('is-open'));
+document.addEventListener('click', (e) => {
+  if (!featurePicker.contains(e.target)) featurePicker.classList.remove('is-open');
+});
+
+function openPlanForm(plan) {
+  editingPlanId = plan ? plan.id : null;
+  planForm.reset();
+  planFormError.textContent = '';
+  planFormTitle.textContent = plan ? 'Edit Plan' : 'Create Plan';
+  planForm.elements.key.disabled = !!plan;
+  planForm.elements.monthly_usd.disabled = !!plan;
+  planKeyPriceNote.style.display = plan ? '' : 'none';
+  const selected = plan ? plan.features : [];
+  featureCheckboxes.forEach(cb => { cb.checked = selected.includes(cb.value); });
+  updateFeaturePickerLabel();
+  if (plan) {
+    planForm.elements.key.value = plan.key;
+    planForm.elements.monthly_usd.value = Math.round(plan.unit_amount_cents / 100);
+    planForm.elements.label.value = plan.label;
+    planForm.elements.description.value = plan.description || '';
+  }
+  planModalBackdrop.classList.remove('hidden');
+}
+
+document.getElementById('createPlanBtn').addEventListener('click', () => openPlanForm(null));
+document.getElementById('cancelPlanForm').addEventListener('click', () => planModalBackdrop.classList.add('hidden'));
+planModalBackdrop.addEventListener('click', (e) => { if (e.target === planModalBackdrop) planModalBackdrop.classList.add('hidden'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !planModalBackdrop.classList.contains('hidden')) planModalBackdrop.classList.add('hidden'); });
+
+planForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(planForm);
+  const features = featureCheckboxes.filter(cb => cb.checked).map(cb => cb.value);
+  try {
+    if (editingPlanId) {
+      await DC.apiSend('PUT', `/api/admin/plans/${editingPlanId}`, {
+        label: fd.get('label'), description: fd.get('description'), features,
+      });
+    } else {
+      await DC.apiSend('POST', '/api/admin/plans', {
+        key: fd.get('key'), label: fd.get('label'), description: fd.get('description'), features,
+        unit_amount_cents: Math.round(Number(fd.get('monthly_usd')) * 100),
+      });
+    }
+    planModalBackdrop.classList.add('hidden');
+    loadPlans();
+  } catch (err) {
+    planFormError.textContent = err.message;
+  }
+});
+
+loadPlans();
+</script>
+{% endblock %}

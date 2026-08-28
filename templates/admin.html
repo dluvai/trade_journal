@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Users — SteadFast{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <form method="get" action="{{ url_for('admin_dashboard') }}" class="search-glass" style="max-width:420px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+    <input type="text" name="q" value="{{ query }}" aria-label="Search users by username, email, or name">
+    <button type="submit" class="iconbtn small">Search</button>
+  </form>
+</div>
+
+{% if query %}
+<div class="panel">
+  <h2>Results</h2>
+  {% if users %}
+  <table>
+    <thead><tr><th>Username</th><th>Name</th><th>Email</th><th>Joined</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="strong">{{ u.username }}{% if u.is_admin %} <span class="badge WIN">admin</span>{% endif %}</td>
+        <td>{{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }}</td>
+        <td>{{ u.email or '—' }}</td>
+        <td>{{ u.created_at[:10] }}</td>
+        <td><a href="{{ url_for('admin_user_detail', user_id=u.id) }}" class="iconbtn small">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No users match "{{ query }}".</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

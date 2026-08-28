@@ -15,24 +15,30 @@
   --baseline:       rgba(245,244,242,0.16);
   --border:         rgba(245,244,242,0.09);
   --border-strong:  rgba(245,244,242,0.16);
-  --series-1:       #3b82f6;
-  --series-1-soft:  rgba(59,130,246,0.16);
+  --series-1:       #c17f3e;
+  --series-1-soft:  rgba(193,127,62,0.18);
   --info:           #5b9bd1;
   --good:           #45c988;
   --critical:       #f0655f;
   --muted-fill:     #3a383c;
   --warn:           #e0954a;
   --shadow:         0 1px 0 rgba(245,244,242,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.7);
-  /* Single-hue sheen off --series-1, reused anywhere the accent needs gradient depth. */
-  --accent-gradient: linear-gradient(135deg,
-    color-mix(in srgb, var(--series-1) 90%, white) 0%,
-    var(--series-1) 55%,
-    color-mix(in srgb, var(--series-1) 85%, black) 100%);
+  /* Molten-ember recipe -- dark, near-black fill that blends with the ground; the amber border/text is what
+     carries the accent, not a bright gradient fill. --series-1 stays a visible amber for borders/rings/chart lines. */
+  --accent-gradient: linear-gradient(135deg, #3a2c22 0%, #1c1512 55%, #0a0807 100%);
+  --accent-text:    #f0d9c0;
+  --accent-border:  rgba(214,140,74,0.4);
+  --accent-glow:    0 1px 0 rgba(230,170,110,0.18) inset, 0 8px 20px -10px rgba(0,0,0,0.7);
+  --ribbon-gradient: linear-gradient(135deg, #b97b3f 0%, #6b3f1d 100%);
+  --good-soft:      rgba(69,201,136,0.18);
+  --critical-soft:  rgba(240,101,95,0.18);
+  --warn-soft:      rgba(224,149,74,0.18);
+  --info-soft:      rgba(91,155,209,0.18);
   /* Translucent so the page's background gradient bleeds through; matches the landing page's .glass exactly so both read as one material. */
   --surface-1-glass: rgba(255,255,255,0.035);
-  /* Charcoal into a deep navy, same blue family as --series-1, so the ground and accent read as one hue. */
-  --page-gradient-start: #0c0c0e;
-  --page-gradient-end:   #0d1b2e;
+  /* True black ground, no blue tint -- blue is an accent (buttons, glows, deltas), never part of the page itself. */
+  --page-gradient-start: #060607;
+  --page-gradient-end:   #08080a;
 }
 /* High-contrast is a genuine accessibility toggle, independent of the (fixed) dark theme. */
 :root[data-contrast="high"] {
@@ -51,11 +57,9 @@
 }
 html, body {
   margin: 0; padding: 0; min-height: 100%;
-  /* Same ambient glow used on the landing and auth pages, so all three read as one surface. */
-  background:
-    radial-gradient(circle at 25% 12%, rgba(59,130,246,0.14), transparent 55%),
-    linear-gradient(135deg, var(--page-gradient-start), var(--page-gradient-end));
-  background-attachment: fixed, fixed;
+  /* True black ground, same on the landing and auth pages -- no ambient color wash; blue only ever appears as a deliberate accent. */
+  background: linear-gradient(135deg, var(--page-gradient-start), var(--page-gradient-end));
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-ui);
 }
@@ -75,17 +79,17 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
   border: none; background: transparent; color: var(--text-secondary); font-family: var(--font-mono);
   font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 5px; cursor: pointer;
 }
-.segmented button.active { background: var(--accent-gradient); color: #fff; }
+.segmented button.active { background: var(--accent-gradient); color: var(--accent-text); border: 1px solid var(--accent-border); }
 /* Shared glass-popover style, mirroring .account-filter's pattern so every dropdown looks the same. */
 .mini-select { position: relative; display: inline-block; }
-/* Solid accent blue, same treatment as .btn-primary -- one consistent, unmistakable
+/* Dark ember fill, same treatment as .btn-primary -- one consistent, unmistakable
    dropdown-trigger look everywhere, instead of relying on context (panel vs header) to
    stay legible. Element selector beats .iconbtn's transparent background on specificity. */
 button.mini-select-trigger, button.account-filter-trigger {
-  background: var(--accent-gradient); border-color: var(--series-1); color: #fff;
-  box-shadow: var(--shadow);
+  background: var(--accent-gradient); border-color: var(--accent-border); color: var(--accent-text);
+  box-shadow: var(--accent-glow);
 }
-button.mini-select-trigger:hover, button.account-filter-trigger:hover { filter: brightness(1.08); }
+button.mini-select-trigger:hover, button.account-filter-trigger:hover { filter: brightness(1.3); }
 button.mini-select-trigger .account-filter-caret, button.account-filter-trigger .account-filter-caret { color: rgba(255,255,255,0.85); }
 .mini-select-trigger { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
 .mini-select-trigger:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
@@ -102,7 +106,7 @@ button.mini-select-trigger .account-filter-caret, button.account-filter-trigger 
      opacity on top of that blur for its own text to stay legible either way. */
   background: rgba(15,14,17,0.96); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
   border: 1px solid var(--border-strong); border-radius: 14px;
-  box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; gap: 1px;
+  box-shadow: var(--shadow), 0 0 32px -6px var(--series-1-soft); padding: 6px; display: flex; flex-direction: column; gap: 1px;
   opacity: 0; visibility: hidden; pointer-events: none;
   transform-origin: top left; transform: translateY(-4px) scale(.98);
   transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
@@ -118,7 +122,7 @@ button.mini-select-trigger .account-filter-caret, button.account-filter-trigger 
   padding: 7px 9px; border-radius: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer;
 }
 .mini-select-option:hover { background: var(--surface-2); color: var(--text-primary); }
-.mini-select-option.is-active { background: var(--accent-gradient); color: #fff; }
+.mini-select-option.is-active { background: var(--accent-gradient); color: var(--accent-text); }
 .mini-select-divider { height: 1px; background: var(--border); margin: 5px 3px; }
 .mini-select-header {
   font-size: 10px; color: var(--text-muted); font-weight: 700; text-transform: uppercase;
@@ -131,7 +135,7 @@ button.mini-select-trigger .account-filter-caret, button.account-filter-trigger 
   font-family: var(--font-mono); font-size: 12px; padding: 6px 8px;
 }
 .date-range-apply {
-  border: 1px solid var(--series-1); background: var(--accent-gradient); color: #fff;
+  border: 1px solid var(--accent-border); background: var(--accent-gradient); color: var(--accent-text);
   font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer;
 }
 .account-filter { position: relative; display: inline-block; }
@@ -150,7 +154,7 @@ button.mini-select-trigger .account-filter-caret, button.account-filter-trigger 
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 216px;
   background: rgba(15,14,17,0.96); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
   border: 1px solid var(--border-strong); border-radius: 14px;
-  box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; gap: 1px;
+  box-shadow: var(--shadow), 0 0 32px -6px var(--series-1-soft); padding: 6px; display: flex; flex-direction: column; gap: 1px;
   opacity: 0; visibility: hidden; pointer-events: none;
   transform-origin: top right; transform: translateY(-4px) scale(.98);
   transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
@@ -187,19 +191,20 @@ button.mini-select-trigger .account-filter-caret, button.account-filter-trigger 
 .iconbtn:hover { border-color: var(--series-1); color: var(--text-primary); }
 .iconbtn.small { padding: 4px 10px; font-size: 11.5px; }
 .iconbtn.danger { color: var(--critical); }
-.iconbtn.danger:hover { border-color: var(--critical); }
+.iconbtn.danger:hover { border-color: var(--critical); box-shadow: 0 0 0 3px var(--critical-soft); }
 .btn-primary {
-  border: 1px solid var(--series-1); background: var(--accent-gradient); color: #fff;
+  border: 1px solid var(--accent-border); background: var(--accent-gradient); color: var(--accent-text);
   font-family: var(--font-ui); font-size: 12px; font-weight: 650; padding: 8px 14px; border-radius: 7px; cursor: pointer;
+  box-shadow: var(--accent-glow);
 }
-.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:hover { filter: brightness(1.25); }
 
 /* top-level page tabs */
 .tabs { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px; margin-bottom: 18px; }
 .tab-btn { border: none; background: transparent; color: var(--text-secondary); font-family: var(--font-ui); font-size: 12.5px; font-weight: 650; padding: 8px 16px; border-radius: 5px; cursor: pointer; }
 .tab-btn:hover { color: var(--text-primary); }
-.tab-btn.active { background: var(--accent-gradient); color: #fff; }
-.tab-btn.active:hover { color: #fff; }
+.tab-btn.active { background: var(--accent-gradient); color: var(--accent-text); border: 1px solid var(--accent-border); }
+.tab-btn.active:hover { color: var(--accent-text); }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
@@ -214,6 +219,10 @@ button.mini-select-trigger .account-filter-caret, button.account-filter-trigger 
 .tile .value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 21px; font-weight: 600; margin-top: 7px; }
 .tile .value.good { color: var(--good); }
 .tile .value.critical { color: var(--critical); }
+.stat-delta { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 650; margin-top: 6px; }
+.stat-delta.good { color: var(--good); }
+.stat-delta.critical { color: var(--critical); }
+.stat-delta svg { width: 11px; height: 11px; }
 
 .panel {
   background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
@@ -422,12 +431,21 @@ td.icon-cell { text-align: center; }
   background: var(--surface-1-glass); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25);
   border: 1px solid var(--border); border-left: 3px solid var(--muted-fill); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow);
 }
-.bw-card.bw-good { border-left-color: var(--good); background: linear-gradient(135deg, color-mix(in srgb, var(--good) 6%, var(--surface-1)) 0%, var(--surface-1) 60%); }
-.bw-card.bw-bad { border-left-color: var(--critical); background: linear-gradient(135deg, color-mix(in srgb, var(--critical) 6%, var(--surface-1)) 0%, var(--surface-1) 60%); }
+.bw-card.bw-good { border-left-color: var(--good); background: linear-gradient(135deg, color-mix(in srgb, var(--good) 6%, var(--surface-1)) 0%, var(--surface-1) 60%); box-shadow: var(--shadow), 0 0 20px -8px var(--good-soft); }
+.bw-card.bw-bad { border-left-color: var(--critical); background: linear-gradient(135deg, color-mix(in srgb, var(--critical) 6%, var(--surface-1)) 0%, var(--surface-1) 60%); box-shadow: var(--shadow), 0 0 20px -8px var(--critical-soft); }
 .bw-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
 .bw-title { font-size: 16px; font-weight: 700; margin-top: 4px; }
 .bw-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 600; margin-top: 3px; }
 .bw-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
+/* Featured card -- a glowing ring + corner ribbon for whichever card should stand out (e.g. a highlighted plan). */
+.card-featured { position: relative; border-color: var(--series-1) !important; box-shadow: var(--shadow), 0 0 0 1px var(--series-1), 0 0 28px -6px rgba(193,127,62,0.4); }
+.card-ribbon {
+  /* Lighter than --accent-gradient on purpose -- a ribbon needs to pop as a badge, not blend like a button does. */
+  position: absolute; top: -1px; right: 14px; background: var(--ribbon-gradient); color: #1a1210;
+  font-size: 9.5px; font-weight: 700; padding: 4px 10px; border-radius: 0 0 6px 6px;
+  letter-spacing: .04em; text-transform: uppercase;
+}
 
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3); }
@@ -446,7 +464,8 @@ td.strong { color: var(--text-primary); font-weight: 600; }
 .badge.FLAG { background: linear-gradient(135deg, color-mix(in srgb, var(--warn) 30%, transparent), color-mix(in srgb, var(--warn) 14%, transparent)); color: var(--warn); margin-left: 6px; }
 
 .winbar-track { width: 60px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; flex: none; }
-.winbar-fill { display: block; height: 100%; background: var(--accent-gradient); border-radius: 3px; }
+/* Its own visible fill, not --accent-gradient -- a thin progress bar needs to read against the dark track, unlike a button. */
+.winbar-fill { display: block; height: 100%; background: var(--ribbon-gradient); border-radius: 3px; }
 .winrate-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; }
 
 .notes-row td { color: var(--text-secondary); font-size: 12px; line-height: 1.5; background: var(--surface-2); }
@@ -458,6 +477,9 @@ td.strong { color: var(--text-primary); font-weight: 600; }
 .table-scroll th { top: -1px; }
 
 .empty { color: var(--text-muted); font-size: 13px; padding: 20px; text-align: center; }
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px 20px; color: var(--text-muted); font-size: 13px; text-align: center; }
+.empty-state svg { width: 30px; height: 30px; opacity: .35; }
+.empty-state span { max-width: 34ch; line-height: 1.5; }
 footer { text-align: center; color: var(--text-muted); font-size: 11px; margin-top: 24px; }
 
 .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -487,6 +509,19 @@ footer { text-align: center; color: var(--text-muted); font-size: 11px; margin-t
   color: var(--text-primary); font-size: 13px; padding: 7px 9px; font-family: inherit;
 }
 .field textarea { resize: vertical; }
+
+/* Pill-shaped glass search bar -- same heavier blur/opacity recipe as the popover menus, so it reads as the same material. */
+.search-glass {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(15,14,17,0.7); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  border: 1px solid var(--border-strong); border-radius: 999px; padding: 9px 16px; box-shadow: var(--shadow);
+}
+.search-glass svg { flex: none; width: 16px; height: 16px; color: var(--text-muted); }
+.search-glass input {
+  flex: 1; background: none; border: none; outline: none; color: var(--text-primary);
+  font-size: 13.5px; font-family: inherit; padding: 0; margin: 0;
+}
+.search-glass .iconbtn.small { flex: none; border-radius: 999px; }
 /* Kept as native <select>s (country picker, CSV-import mapper) since they'd need real search to stay usable as a popover; only the closed box can be glass-styled, not the OS-painted option list. */
 select {
   background: var(--surface-1-glass); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
@@ -607,7 +642,8 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 }
 .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 18px 20px; white-space: nowrap; flex: none; }
 .sidebar-brand svg {
-  flex: none; color: #fff; background: var(--accent-gradient); border-radius: 8px; padding: 6px;
+  /* The brand mark stays a visible ribbon-toned chip -- it needs to read as a logo, not blend in like a button. */
+  flex: none; color: #1a1210; background: var(--ribbon-gradient); border-radius: 8px; padding: 6px;
   width: 32px; height: 32px; box-sizing: border-box;
 }
 .sidebar-brand span { font-size: 13.5px; font-weight: 700; color: var(--text-primary); opacity: 0; transition: opacity .15s; }
@@ -623,7 +659,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 }
 .nav-item svg { flex: none; width: 18px; height: 18px; }
 .nav-item:hover { background: var(--surface-2); color: var(--text-primary); }
-.nav-item.active { background: var(--accent-gradient); color: #fff; }
+.nav-item.active { background: var(--accent-gradient); color: var(--accent-text); border: 1px solid var(--accent-border); box-shadow: var(--accent-glow); }
 .nav-item:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
 .sidebar-footer {
   flex: none; padding: 8px; border-top: 1px solid var(--border);
