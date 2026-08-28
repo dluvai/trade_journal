@@ -82,6 +82,10 @@ SCHEMA_STATEMENTS = [
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""",
+    # The column's own UNIQUE is case-sensitive (SQLite default collation), which let "felix" and
+    # "Felix" both be registered as separate accounts -- this index enforces true case-insensitive
+    # uniqueness at the database level, closing the race condition an app-level check alone can't.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)",
 ]
 
 MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
@@ -511,8 +515,9 @@ def public_user_dict(user):
 
 
 def get_user_by_username(username):
+    # Case-insensitive on purpose -- "felix" and "Felix" are the same account, not two.
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM users WHERE username=?", (username,)).rows
+    rows = conn.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)).rows
     return rows[0].asdict() if rows else None
 
 
