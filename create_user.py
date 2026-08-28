@@ -40,9 +40,7 @@ def main():
     _load_dotenv()
     import db
 
-    # libsql_client's background thread isn't a daemon thread -- without an
-    # explicit close() on every exit path, this script would just hang
-    # after printing its result instead of actually returning to the shell.
+    # Explicit close() needed on every exit path, or the script hangs since libsql_client's background thread isn't a daemon.
     try:
         if db.get_user_by_username(username):
             print(f"A user named '{username}' already exists.")

@@ -329,8 +329,7 @@ def _fetch_chf_current_account_pct_gdp():
     gdp_value = gdp_by_period.get(period)
     if gdp_value is None:
         return None, None
-    # Both are plain quarterly levels (SNB doesn't annualize either
-    # series) -- divide directly, no annualizing needed.
+    # Both series are already plain quarterly levels, so no annualizing is needed before dividing.
     return period, round(ca_value / gdp_value * 100, 2)
 
 
@@ -370,11 +369,7 @@ def _fetch_cad_current_account_pct_gdp():
     gdp_value = next((p["value"] for p in gdp_data[0]["object"]["vectorDataPoint"] if p["refPer"][:7] == ca_period), None)
     if gdp_value is None:
         return None, None
-    # ca_value is a quarterly flow (millions); gdp_value is already an
-    # annual rate (StatCan's SAAR convention) -- annualize the quarterly
-    # flow (x4) before dividing so both sides of the ratio are on the same
-    # annual basis, matching how current-account-to-GDP is conventionally
-    # reported internationally.
+    # Annualizes the quarterly flow (x4) before dividing, since gdp_value is already SAAR -- keeps the ratio on a comparable annual basis.
     return ca_period, round((ca_value * 4) / gdp_value * 100, 2)
 
 
@@ -465,9 +460,7 @@ def _fetch_aud_current_account_pct_gdp():
     gdp_value = gdp_by_period.get(period)
     if gdp_value is None:
         return None, None
-    # Both are already plain quarterly levels (ABS doesn't annualize
-    # either the BOP or the expenditure-GDP series, unlike StatCan's SAAR
-    # convention for CAD) -- divide directly, no annualizing needed.
+    # ABS series (unlike StatCan's CAD/SAAR) are already plain quarterly levels, so no annualizing is needed.
     return period, round(ca_value / gdp_value * 100, 2)
 
 
@@ -539,11 +532,7 @@ def sync(currencies=None, dry_run=False):
     report = {ccy: {} for ccy in currencies}
     fetched_by_ccy = {ccy: {} for ccy in currencies}
 
-    # Every job hits a different institution's endpoint (StatCan, ABS,
-    # ONS, BOJ, SNB) -- pure independent network waits, so a thread pool
-    # gets them all back in roughly the time of the single slowest one
-    # instead of the sum of ~15+ sequential requests (same reasoning as
-    # fred_sync.sync()).
+    # Thread pool since each job is an independent network wait to a different institution -- same reasoning as fred_sync.sync().
     jobs = [(metric, ccy) for metric, fetchers in FETCHERS.items() for ccy in currencies if ccy in fetchers]
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs) or 1) as pool:
         results = list(pool.map(_fetch_one, jobs))

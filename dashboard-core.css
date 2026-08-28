@@ -1,20 +1,11 @@
 /* ============ Instrument Panel design system ============
-   Dark only, deliberately -- no light theme, no OS/system-preference
-   override. Ground is a true charcoal-black, neutral (no blue/violet/green
-   cast), so the single electric-blue accent reads as the only hue in the
-   room. Win/loss/warn stay their own semantic hues and never double as the
-   accent. Variable names are kept stable since dashboard-core.js reads
-   several of them directly (--good, --critical, --muted-fill, --series-1,
-   --surface-1/2, --text-primary, --text-muted) to color JS-generated SVG.
-*/
+   Dark-only design system; variable names must stay stable since dashboard-core.js
+   reads several of them directly for SVG colors. */
 :root {
   color-scheme: dark;
   --font-ui:        "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:      "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
-  /* Charcoal ground, one electric-blue "needle" accent -- a single hue
-     carried from near-black to near-white, not a multi-hue mix and not
-     tinted toward any other color. Surfaces stay neutral, just a shade
-     lighter than the ground, same material family. */
+  /* Single accent hue carried from near-black to near-white; surfaces stay neutral, just lighter than the ground. */
   --surface-1:      #131214;
   --surface-2:      #19181b;
   --text-primary:   #f5f4f2;
@@ -32,32 +23,18 @@
   --muted-fill:     #3a383c;
   --warn:           #e0954a;
   --shadow:         0 1px 0 rgba(245,244,242,0.04) inset, 0 12px 28px -18px rgba(0,0,0,0.7);
-  /* Single-hue sheen derived from --series-1 (lighter top-left, truer
-     middle, darker bottom-right) -- reused wherever the accent needs
-     gradient depth (buttons, active nav, badges) instead of a flat fill. */
+  /* Single-hue sheen off --series-1, reused anywhere the accent needs gradient depth. */
   --accent-gradient: linear-gradient(135deg,
     color-mix(in srgb, var(--series-1) 90%, white) 0%,
     var(--series-1) 55%,
     color-mix(in srgb, var(--series-1) 85%, black) 100%);
-  /* Translucent card surface, derived from --surface-1 -- lets the page's
-     diagonal gradient bleed through panels/tiles just enough that cards
-     read as part of the same surface instead of flat opaque blocks
-     sitting on top of it. */
-  /* Matches the landing page's .glass exactly (rgba(255,255,255,0.035) +
-     blur(22px) saturate(1.3)) -- a near-transparent white wash over heavy
-     blur, not a percentage of --surface-1, so every card in the app reads
-     as the same material as the marketing page instead of a darker/more
-     opaque variant of it. */
+  /* Translucent so the page's background gradient bleeds through; matches the landing page's .glass exactly so both read as one material. */
   --surface-1-glass: rgba(255,255,255,0.035);
-  /* Barely-there diagonal depth, top-left to bottom-right -- deliberately
-     close in value to --page (charcoal to charcoal) so it reads as subtle
-     lighting, never as a visible color wash. */
+  /* Charcoal into a deep navy, same blue family as --series-1, so the ground and accent read as one hue. */
   --page-gradient-start: #0c0c0e;
-  --page-gradient-end:   #0f2926;
+  --page-gradient-end:   #0d1b2e;
 }
-/* High-contrast: relative adjustments off the dark palette above, same
-   color-mix technique as --accent-gradient -- a real accessibility toggle,
-   unrelated to (and unaffected by removing) the theme choice above. */
+/* High-contrast is a genuine accessibility toggle, independent of the (fixed) dark theme. */
 :root[data-contrast="high"] {
   --border:         color-mix(in srgb, var(--text-primary) 32%, transparent);
   --border-strong:  color-mix(in srgb, var(--text-primary) 48%, transparent);
@@ -74,10 +51,7 @@
 }
 html, body {
   margin: 0; padding: 0; min-height: 100%;
-  /* Same ambient blue glow as the login page's art panel (radial-gradient
-     at 30%/20%, same accent + alpha), layered over the charcoal-teal
-     diagonal so the logged-in app reads as a continuation of the same
-     surface instead of a flatter, glow-less version of it. */
+  /* Same ambient glow used on the landing and auth pages, so all three read as one surface. */
   background:
     radial-gradient(circle at 25% 12%, rgba(59,130,246,0.14), transparent 55%),
     linear-gradient(135deg, var(--page-gradient-start), var(--page-gradient-end));
@@ -102,23 +76,39 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
   font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 5px; cursor: pointer;
 }
 .segmented button.active { background: var(--accent-gradient); color: #fff; }
-/* Generic small glass-popover dropdown -- date-range preset and the
-   monthly-return year picker both render into this (mirrors
-   .account-filter's trigger+popover pattern so every dropdown in the app
-   shares the same glass material and interaction). */
+/* Shared glass-popover style, mirroring .account-filter's pattern so every dropdown looks the same. */
 .mini-select { position: relative; display: inline-block; }
+/* Solid accent blue, same treatment as .btn-primary -- one consistent, unmistakable
+   dropdown-trigger look everywhere, instead of relying on context (panel vs header) to
+   stay legible. Element selector beats .iconbtn's transparent background on specificity. */
+button.mini-select-trigger, button.account-filter-trigger {
+  background: var(--accent-gradient); border-color: var(--series-1); color: #fff;
+  box-shadow: var(--shadow);
+}
+button.mini-select-trigger:hover, button.account-filter-trigger:hover { filter: brightness(1.08); }
+button.mini-select-trigger .account-filter-caret, button.account-filter-trigger .account-filter-caret { color: rgba(255,255,255,0.85); }
 .mini-select-trigger { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
-.mini-select-trigger[aria-expanded="true"] { border-color: var(--series-1); color: var(--text-primary); }
-.mini-select-trigger:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
-.mini-select-trigger[aria-expanded="true"] .account-filter-caret { transform: rotate(180deg); color: var(--series-1); }
+.mini-select-trigger:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.mini-select-trigger[aria-expanded="true"] .account-filter-caret { transform: rotate(180deg); }
+/* Default anchor is left (extends rightward) -- correct for a trigger that sits near the start
+   of its row (plenty of room to its right), like the Macros currency/compare pickers. A trigger
+   that sits at the right end of its row instead (date-range, monthly-year) opts into
+   .mini-select-right so its popover extends left into reserved page padding instead of past
+   the unguarded right edge -- matches .account-filter-popover's own convention. */
 .mini-select-popover {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; min-width: 152px;
-  background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  /* Heavier blur + a real (not 3.5%) dark wash -- a popover floats over arbitrary page
+     content, so it needs the blur to visibly scramble whatever's behind it, and enough
+     opacity on top of that blur for its own text to stay legible either way. */
+  background: rgba(15,14,17,0.96); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
   border: 1px solid var(--border-strong); border-radius: 14px;
   box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; gap: 1px;
   opacity: 0; visibility: hidden; pointer-events: none;
   transform-origin: top left; transform: translateY(-4px) scale(.98);
   transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
+}
+.mini-select.mini-select-right .mini-select-popover {
+  left: auto; right: 0; transform-origin: top right;
 }
 .mini-select.is-open .mini-select-popover {
   opacity: 1; visibility: visible; pointer-events: auto; transform: none;
@@ -129,6 +119,11 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 }
 .mini-select-option:hover { background: var(--surface-2); color: var(--text-primary); }
 .mini-select-option.is-active { background: var(--accent-gradient); color: #fff; }
+.mini-select-divider { height: 1px; background: var(--border); margin: 5px 3px; }
+.mini-select-header {
+  font-size: 10px; color: var(--text-muted); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; padding: 6px 9px 3px;
+}
 .date-range-custom { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; align-items: center; }
 .date-range-custom input[type="date"] {
   background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
@@ -146,15 +141,14 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 .account-filter-trigger .account-filter-label {
   max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.account-filter-trigger[aria-expanded="true"] { border-color: var(--series-1); color: var(--text-primary); }
-.account-filter-trigger:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.account-filter-trigger:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .account-filter-caret {
-  font-size: 9px; color: var(--text-muted); display: inline-block; transition: transform .16s ease;
+  font-size: 9px; color: rgba(255,255,255,0.85); display: inline-block; transition: transform .16s ease;
 }
-.account-filter-trigger[aria-expanded="true"] .account-filter-caret { transform: rotate(180deg); color: var(--series-1); }
+.account-filter-trigger[aria-expanded="true"] .account-filter-caret { transform: rotate(180deg); }
 .account-filter-popover {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 216px;
-  background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  background: rgba(15,14,17,0.96); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
   border: 1px solid var(--border-strong); border-radius: 14px;
   box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; gap: 1px;
   opacity: 0; visibility: hidden; pointer-events: none;
@@ -209,12 +203,7 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
-/* Flat, identical color on both the grid and each cell on purpose -- with
-   auto-fit columns, the tile count rarely divides evenly into the row
-   width, so the container's own background shows through the leftover
-   space in the last row. A gradient or divider-gap trick there would make
-   that leftover space look like a visibly different, mismatched block;
-   a single flat color makes it disappear instead. */
+/* Flat, matching color on grid and cells so the leftover space in an uneven last row disappears instead of looking mismatched. */
 .tiles {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 10px;
   background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
@@ -230,14 +219,17 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
   background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
   border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-bottom: 10px; box-shadow: var(--shadow);
 }
-/* A lone right-aligned control (date filter) that governs the card right
-   below it, but must never read as glued to it -- deliberately more
-   breathing room underneath than the standard inter-card gap (10px) above,
-   so the eye registers it as sitting IN the gap, not as that card's own
-   header peeking out above its border. */
+/* Boosts the whole card's stacking context when a popover is open, since z-index alone can't escape the card's own backdrop-filter stacking context. */
+.panel:has(.mini-select.is-open, .account-filter.is-open),
+.tiles:has(.mini-select.is-open, .account-filter.is-open),
+.ticker-strip:has(.mini-select.is-open, .account-filter.is-open),
+header:has(.mini-select.is-open, .account-filter.is-open) {
+  position: relative;
+  z-index: 30;
+}
+/* Extra margin below so the control reads as sitting in the gap above its card, not as that card's own header. */
 .panel-controls-row { display: flex; justify-content: flex-end; margin: 0 0 16px; }
-/* Flags this card as a distinct insight, not just another data panel --
-   same "colored left edge = category marker" convention as .bw-card. */
+/* Colored left edge flags this as a distinct insight card, matching .bw-card's convention. */
 #accountComparePanel { border-left: 3px solid var(--series-1); }
 .panel h2 { font-size: 13px; margin: 0 0 14px; font-weight: 650; letter-spacing: .01em; }
 .panel h2 .n { color: var(--text-muted); font-weight: 500; font-family: var(--font-mono); }
@@ -247,16 +239,7 @@ header .sub { color: var(--text-muted); font-size: 12px; font-family: var(--font
 .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 @media (max-width: 900px) { .grid2, .grid3, .chart-grid { grid-template-columns: 1fr; } }
 
-/* iframe embeds report height:100% against whatever we give the wrapper --
-   without an explicit height here the Myfxbook calendar collapses to 0px.
-   Myfxbook's widget only renders light -- there's no dark-mode param, and a
-   CSS invert() filter to fake one distorts the flag icons' real colors
-   (can't selectively spare them: it's one cross-origin iframe, so there's
-   no way to filter the calendar rows but not the flags inside them). Full
-   color-matching to the page isn't reachable without that tradeoff, so
-   this only softens the seam -- rounded to match .panel's own radius, a
-   hairline border in the page's real --border token, no extra padding ring
-   -- rather than pretend the light/dark boundary isn't there. */
+/* Myfxbook's iframe is light-mode-only and can't be inverted without distorting flag colors, so this only softens the light/dark seam rather than hiding it. */
 .calendar-embed { height: calc(100vh - 200px); min-height: 520px;
   border-radius: 9px; overflow: hidden; border: 1px solid var(--border); }
 .calendar-embed iframe { display: block; }
@@ -360,9 +343,7 @@ td.icon-cell { text-align: center; }
 .row-icon-btn.reflect-icon:hover { color: var(--series-1); border-color: var(--series-1); box-shadow: 0 0 0 3px var(--series-1-soft); }
 .row-icon-btn.screens-icon:hover { color: var(--info); border-color: var(--info); box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 20%, transparent); }
 
-/* reflection & screenshots popups -- themed like every other surface (no
-   fixed-dark hardcoding) so they never contradict whichever mode is active;
-   the accent/info tint is what keeps each one visually distinct. */
+/* Reflection & screenshots popups use the same theme tokens as every other surface; only the accent/info tint sets them apart. */
 .modal-backdrop { backdrop-filter: blur(6px) saturate(1.05); -webkit-backdrop-filter: blur(6px) saturate(1.05); }
 .modal-close-x {
   position: absolute; top: 12px; right: 14px; width: 28px; height: 28px; border-radius: 50%; border: none;
@@ -458,8 +439,7 @@ td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric:
 td.strong { color: var(--text-primary); font-weight: 600; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
-/* Each badge's gradient uses only its own semantic color (never the brand
-   accent) -- status meaning and brand identity stay visually separate. */
+/* Badge gradients use only their own semantic color, never the brand accent, to keep status and identity separate. */
 .badge.WIN { background: linear-gradient(135deg, color-mix(in srgb, var(--good) 26%, transparent), color-mix(in srgb, var(--good) 12%, transparent)); color: var(--good); }
 .badge.LOSS { background: linear-gradient(135deg, color-mix(in srgb, var(--critical) 26%, transparent), color-mix(in srgb, var(--critical) 12%, transparent)); color: var(--critical); }
 .badge.BE { background: linear-gradient(135deg, color-mix(in srgb, var(--muted-fill) 34%, transparent), color-mix(in srgb, var(--muted-fill) 18%, transparent)); color: var(--text-muted); }
@@ -473,7 +453,7 @@ td.strong { color: var(--text-primary); font-weight: 600; }
 .notes-row { display: none; }
 .notes-row.open { display: table-row; }
 
-.table-scroll { max-height: 460px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px; }
+.table-scroll { max-height: 460px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 7px; }
 .table-scroll table { font-size: 12px; }
 .table-scroll th { top: -1px; }
 
@@ -507,6 +487,21 @@ footer { text-align: center; color: var(--text-muted); font-size: 11px; margin-t
   color: var(--text-primary); font-size: 13px; padding: 7px 9px; font-family: inherit;
 }
 .field textarea { resize: vertical; }
+/* Kept as native <select>s (country picker, CSV-import mapper) since they'd need real search to stay usable as a popover; only the closed box can be glass-styled, not the OS-painted option list. */
+select {
+  background: var(--surface-1-glass); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--border); border-radius: 7px; color: var(--text-primary); font-family: inherit; font-size: 13px; padding: 6px 8px; cursor: pointer;
+}
+select option { background: var(--surface-1); color: var(--text-primary); }
+/* Full-width variant of the glass select for form fields, vs. the compact pill style used for filter triggers. */
+.field .mini-select { width: 100%; }
+.field .mini-select-trigger {
+  width: 100%; justify-content: space-between; text-align: left; font-family: inherit;
+  background: var(--surface-1-glass); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--border); border-radius: 9px;
+  color: var(--text-primary); font-size: 13px; padding: 7px 9px;
+}
+.field .mini-select-popover { width: 100%; min-width: 0; box-sizing: border-box; }
 .form-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 
 /* strategy / macro snapshot */
@@ -532,11 +527,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
   display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px;
 }
 .metric-category-card { background: linear-gradient(160deg, color-mix(in srgb, var(--series-1) 4%, var(--surface-2)) 0%, var(--surface-2) 65%); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
-/* Wide cards (currently just Inflation, which can run to 6 rows -- taller
-   than any other card) span 2 grid columns and lay their rows out in a
-   2-column sub-grid instead of one long stack, so the card reads as a
-   rectangle instead of a narrow tower that stretches its whole grid row
-   to match. */
+/* Wide cards use a 2-column sub-grid so a tall card (e.g. Inflation) reads as a rectangle, not a narrow tower. */
 .metric-category-card.wide { grid-column: span 2; }
 .metric-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
 .metric-row-grid .metric-row { margin-top: 0; padding-top: 0; border-top: none; }
@@ -579,9 +570,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 .spin-icon.spinning { animation: spin-rotate 0.8s linear infinite; }
 @keyframes spin-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* live price ticker + market news -- built from our own data (market_data.py),
-   not an embedded widget, so it's pixel-consistent with the rest of the app
-   in both themes instead of carrying a vendor's own fixed styling. */
+/* Live price ticker + market news, built from our own data (market_data.py), not an embedded widget, so styling stays consistent with the rest of the app. */
 .ticker-strip {
   border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
   margin-bottom: 18px; background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
@@ -605,11 +594,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
   .ticker-track { animation: none; overflow-x: auto; }
 }
 
-/* hover-to-reveal sidebar (multi-page live app) -- closed to just the logo
-   by default, opens (nav links fade in, rail widens) on hover/focus, and
-   closes again the moment the pointer leaves. No pinning -- it's purely a
-   CSS hover state, no state to persist. Reuses only the existing theme
-   tokens, no new colors. */
+/* Hover-to-reveal sidebar is pure CSS state (no pinning, nothing persisted) and reuses existing theme tokens only. */
 .sidebar {
   position: fixed; top: 0; left: 0; bottom: 0; width: 60px; z-index: 80;
   background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
@@ -646,10 +631,7 @@ select.macro-input { width: auto; text-align: left; font-family: var(--font-ui);
 }
 .sidebar:hover .sidebar-footer, .sidebar:focus-within .sidebar-footer { opacity: 1; pointer-events: auto; }
 
-/* Content shifts over while the sidebar's open, rather than the sidebar
-   overlaying it -- an overlay would only cover its own width, slicing
-   through anything (like the header title) that happens to straddle that
-   edge instead of fully hiding it. */
+/* Content shifts over rather than being overlaid, since an overlay would slice through anything straddling its edge. */
 .page-shell { margin-left: 60px; transition: margin-left .18s ease; }
 body:has(.sidebar:hover) .page-shell, body:has(.sidebar:focus-within) .page-shell { margin-left: 220px; }
 @media (prefers-reduced-motion: reduce) {
@@ -658,21 +640,9 @@ body:has(.sidebar:hover) .page-shell, body:has(.sidebar:focus-within) .page-shel
 
 .sidebar-hamburger { display: none; }
 
-/* Touch devices have no :hover, so the desktop hover-to-reveal rail would
-   otherwise be permanently stuck collapsed with no way to see labels or
-   navigate anywhere. Below this width the sidebar becomes an off-canvas
-   drawer instead: hidden by default, toggled open by a hamburger button
-   (JS-driven, see DC.initMobileSidebar), fully expanded and unhidden by
-   hover state entirely -- and content no longer reserves 60px it isn't
-   using while the drawer's closed. */
-/* Gated on (hover: none), not just max-width, on purpose -- a narrow
-   max-width alone also matches a zoomed-in desktop browser (browser zoom
-   shrinks the effective CSS-pixel viewport, same as a narrower screen
-   would), which would otherwise flip a real mouse-driven desktop into the
-   touch drawer mid-zoom. (hover: none) is only true for devices that
-   genuinely lack a hover-capable pointer -- real phones/tablets -- so a
-   zoomed-in desktop with a real cursor keeps the desktop hover sidebar
-   at any zoom level, and only genuine touch devices get the drawer. */
+/* Below this width, touch devices (no :hover) get an off-canvas drawer (toggled via a hamburger,
+   see DC.initMobileSidebar) instead of the desktop hover rail. Gated on (hover: none), not just
+   max-width, so a zoomed-in desktop browser doesn't get flipped into the touch drawer. */
 @media (max-width: 768px) and (hover: none) {
   .sidebar {
     width: 220px; transform: translateX(-100%); transition: transform .2s ease;

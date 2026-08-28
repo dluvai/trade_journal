@@ -55,9 +55,7 @@ import openpyxl
 
 import db
 
-# RBNZ, SNB, BOJ, and BoE's endpoints 403 a bare urllib/curl User-Agent;
-# RBA's endpoint does the opposite and 403s a real browser UA (confirmed by
-# hand, both ways) -- so there isn't one UA that satisfies every source.
+# No single User-Agent works for every source -- RBA rejects a browser UA while the others reject a bare urllib/curl one.
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 _UA_CURL = "curl/8.0"
 _SSL_CTX = ssl.create_default_context(cafile=certifi.where())  # SNB's chain isn't in every OS's default trust store
@@ -177,10 +175,7 @@ def sync(currencies=None, dry_run=False):
     existing_by_ccy = {r["currency"]: r for r in db.list_macro()}
     report = {}
 
-    # Six independent central-bank requests -- pure network waits, so a
-    # thread pool gets them all back in roughly the time of the single
-    # slowest one instead of the sum of all six (same reasoning as
-    # fred_sync.sync()).
+    # Thread pool for the six independent bank requests -- same network-bound reasoning as fred_sync.sync().
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(currencies) or 1) as pool:
         results = list(pool.map(_fetch_one, currencies))
 

@@ -1,5 +1,6 @@
 """Shared Turso (libSQL) access for the live trade-entry dashboard."""
 import os
+import threading
 import time
 from datetime import datetime
 
@@ -7,8 +8,7 @@ import libsql_client
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-# One CREATE TABLE per statement -- libsql_client has no executescript(),
-# unlike stdlib sqlite3.
+# One statement per entry since libsql_client has no executescript().
 SCHEMA_STATEMENTS = [
     """CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,10 +61,7 @@ SCHEMA_STATEMENTS = [
 
 MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
 
-# Single source of truth for every macro metric the app tracks. Their actual
-# table columns (plus a prev_<key> twin for each) are added by the migration
-# below rather than spelled out in SCHEMA -- adding a new metric here is
-# enough, no separate CREATE TABLE edit needed.
+# Single source of truth for macro metrics -- the migration below adds the actual (and prev_*) columns, so a new metric only needs adding here.
 MACRO_METRIC_KEYS = [
     "interest_rate", "cpi_yoy", "cpi_mom", "core_cpi_yoy", "core_ppi_yoy", "ppi_yoy", "core_pce_yoy", "core_pce_mom",
     "unemployment", "employment_change", "retail_sales_yoy", "trade_balance", "current_account",
@@ -73,18 +70,14 @@ MACRO_METRIC_KEYS = [
 
 
 def _to_https(url):
-    # The libsql:// scheme talks Hrana-over-websocket, which fails its
-    # protocol handshake with this client version -- the https:// scheme is
-    # the one confirmed working for every operation this app needs.
+    # Rewrites libsql:// to https://, since Hrana-over-websocket fails its handshake with this client version.
     if url.startswith("libsql://"):
         return "https://" + url[len("libsql://"):]
     return url
 
 
 def _migrate_macro_prev_columns(conn):
-    # Metric columns were added to this table over time, after real databases
-    # already existed -- CREATE TABLE IF NOT EXISTS won't add columns to a
-    # table that's already there, so backfill any missing ones by hand.
+    # Backfills columns by hand since CREATE TABLE IF NOT EXISTS won't add them to an already-existing table.
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(macro)").rows}
     needed = list(MACRO_METRIC_KEYS) + [f"prev_{k}" for k in MACRO_METRIC_KEYS]
     for col in needed:
@@ -95,27 +88,20 @@ def _migrate_macro_prev_columns(conn):
 def _migrate_trades_strategy_column(conn):
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)").rows}
     if "strategy_id" not in existing:
-        # Nullable and no FOREIGN KEY constraint on purpose: SQLite/libsql only
-        # enforces foreign keys when PRAGMA foreign_keys=ON is set per
-        # connection (easy to forget elsewhere in the codebase and get
-        # silently-unenforced constraints), and a trade logged before this
-        # column existed -- or one that's just discretionary, no formal
-        # setup -- has no strategy to point at. NULL means exactly that.
+        # Nullable, no FK on purpose -- foreign keys need a per-connection PRAGMA easy to forget elsewhere,
+        # and pre-existing/strategy-less trades genuinely have nothing to point at.
         conn.execute("ALTER TABLE trades ADD COLUMN strategy_id INTEGER")
 
 
 def _migrate_trades_account_column(conn):
-    # Same rationale as strategy_id above -- trading_accounts is a brand new
-    # table (no existing rows to reconcile), but trades already has data, so
-    # the column linking a trade to an account still needs an ALTER TABLE.
+    # Same rationale as strategy_id -- trades already has data, so the new account_id link still needs an ALTER TABLE.
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)").rows}
     if "account_id" not in existing:
         conn.execute("ALTER TABLE trades ADD COLUMN account_id INTEGER")
 
 
 def _migrate_user_id_columns(conn):
-    # Same rationale/pattern as strategy_id above: nullable, no FK, backfilled
-    # by hand since these columns were added after real data already existed.
+    # Same pattern as strategy_id: nullable, no FK, hand-backfilled since real data predates the column.
     for table in ("trades", "strategies"):
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").rows}
         if "user_id" not in existing:
@@ -123,13 +109,8 @@ def _migrate_user_id_columns(conn):
 
 
 def _migrate_user_profile_columns(conn):
-    # Signup/verification/password-reset support, added after real accounts
-    # (e.g. felix's) already existed -- every new column is nullable or
-    # defaults to "not verified yet" so existing accounts keep working
-    # unchanged. No UNIQUE constraint on email: SQLite/libsql can't add one
-    # via ALTER TABLE on an existing table, so uniqueness is enforced at the
-    # app layer instead (same "no FK, app-level discipline" convention
-    # already used for trades.user_id).
+    # New columns are all nullable/defaulted so pre-existing accounts keep working; email uniqueness
+    # is enforced at the app layer since ALTER TABLE can't add a UNIQUE constraint.
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)").rows}
     additions = {
         "first_name": "TEXT",
@@ -149,11 +130,8 @@ def _migrate_user_profile_columns(conn):
 
 
 def _migrate_user_extended_profile_columns(conn):
-    # Country/address/phone (all optional, editable from the profile page)
-    # and avatar storage -- avatar bytes live directly on this row rather
-    # than a separate table since there's only ever one per user; served
-    # through its own route (see get_avatar), never embedded in
-    # public_user_dict()'s output.
+    # Avatar bytes live directly on the users row (one per user, no separate table needed) and are
+    # served via their own route, never in public_user_dict().
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)").rows}
     additions = {
         "country": "TEXT",
@@ -172,16 +150,27 @@ def _migrate_user_extended_profile_columns(conn):
 
 _schema_ready = False
 _client = None
+_client_lock = threading.Lock()
+
+
+class _LockedClient:
+    # gunicorn runs this app with --worker-class gthread --threads 4, so multiple requests can
+    # call execute() on the one shared libsql_client at the same time. Measured by hand: concurrent
+    # calls took 3-6x longer *each* than the same calls run one after another, so the underlying
+    # client isn't safely concurrent -- this lock makes access explicit instead of contended.
+    def __init__(self, client):
+        self._client = client
+
+    def execute(self, *args, **kwargs):
+        with _client_lock:
+            return self._client.execute(*args, **kwargs)
+
+    def close(self):
+        self._client.close()
 
 
 def _ensure_schema(conn):
-    # Each statement here is a separate network round-trip to Turso (~300ms),
-    # unlike the equivalent local-sqlite PRAGMA/ALTER calls this was ported
-    # from, which cost microseconds -- running all of this on every single
-    # get_conn() call (matching the old sqlite3 pattern) added several
-    # seconds of latency to every API request. Run it once per process
-    # instead; a stale flag after a schema change just means restarting the
-    # process, same as any other in-memory cache in this app.
+    # Runs once per process (not per get_conn()) since each migration statement costs ~300ms over the network, unlike the local-sqlite calls this replaced.
     global _schema_ready
     if _schema_ready:
         return
@@ -197,16 +186,10 @@ def _ensure_schema(conn):
 
 
 def get_conn():
-    # One client reused for the life of the process rather than a fresh one
-    # per call: each call also pays a ~1s "cold" first-request cost on top of
-    # the usual ~300ms per query, and this app's gunicorn setup (Procfile) is
-    # a single sync worker handling one request at a time, so there's no
-    # concurrent-access risk to reusing it.
+    # Client is reused for the process lifetime to avoid the ~1s cold-start cost per call.
     global _client
     if _client is None:
-        # Read lazily, not as a module-level constant -- server.py imports
-        # this module before it calls its own _load_dotenv(), so capturing
-        # these at import time would always see them unset locally.
+        # Read lazily, not at import time, since server.py imports this module before loading its own .env.
         url = os.environ.get("TURSO_DATABASE_URL")
         token = os.environ.get("TURSO_AUTH_TOKEN")
         if not url or not token:
@@ -214,17 +197,13 @@ def get_conn():
                 "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set -- this app "
                 "stores everything in Turso now, there is no local file fallback."
             )
-        _client = libsql_client.create_client_sync(url=_to_https(url), auth_token=token)
+        _client = _LockedClient(libsql_client.create_client_sync(url=_to_https(url), auth_token=token))
     _ensure_schema(_client)
     return _client
 
 
 def close():
-    # libsql_client's background executor thread is not a daemon thread, so
-    # skipping this leaves any short-lived script (create_user.py, a one-off
-    # migration) hanging indefinitely after it's actually done -- Python
-    # won't exit while a non-daemon thread is still alive. Not needed by the
-    # live server itself, which runs until the process is killed anyway.
+    # Needed by short-lived scripts (not the live server) since libsql_client's background thread isn't a daemon and would otherwise hang the process.
     global _client
     if _client is not None:
         _client.close()
@@ -232,10 +211,7 @@ def close():
 
 
 def derive_result(rr):
-    # Based on realized R-multiple, not raw PnL -- a trade that closed
-    # slightly positive but well under your planned 1R isn't a real "win"
-    # in an R-multiple system, it's a breakeven-ish outcome. Always
-    # computed, never manually overridden (see insert_trade/update_trade).
+    # Result is derived from realized R-multiple (not raw PnL), and always computed -- never manually overridden.
     if rr < 0:
         return "LOSS"
     if rr <= 1:
@@ -442,11 +418,7 @@ def assign_untagged_trades(user_id, strategy_id):
 
 # ---------- macro snapshot (global, shared by every user) ----------
 
-# Same global data read by every user on every Macros-page load (often
-# several times per load -- fundamentals, the workspace, and the bias
-# table each call list_macro() independently) but changed only by an
-# explicit FRED sync or a manual edit -- worth a short in-process cache to
-# cut repeat Turso round-trips (~300ms each), invalidated on any write.
+# In-process cache since every Macros-page load calls list_macro() several times but the data only changes on sync/edit.
 _macro_cache = None
 _MACRO_CACHE_TTL_SECONDS = 30
 
@@ -478,9 +450,7 @@ def upsert_macro(currency, fields):
     existing_rows = conn.execute("SELECT * FROM macro WHERE currency=?", (currency,)).rows
     existing = existing_rows[0].asdict() if existing_rows else {}
 
-    # Keep one step of history per metric -- whatever the value *was* moves
-    # into prev_* only when the incoming value actually changes it, so the UI
-    # can show a real latest-vs-prev comparison instead of just a snapshot.
+    # Keeps one step of history per metric so the UI can show a real latest-vs-prev comparison.
     new_values, prev_values = {}, {}
     for key in MACRO_METRIC_KEYS:
         new_val = fields[key] if key in fields else existing.get(key)
@@ -509,9 +479,7 @@ def upsert_macro(currency, fields):
 
 # ---------- users ----------
 
-# Fields safe to hand back to a browser -- everything else on the users row
-# (password_hash, every verification/reset code+expiry+attempts column) must
-# never reach a template context or jsonify() call.
+# Only these fields are browser-safe -- password_hash and every reset/verification column must never reach a template or jsonify().
 _PUBLIC_USER_FIELDS = [
     "id", "username", "first_name", "last_name", "email", "email_verified", "created_at",
     "country", "address_line1", "address_city", "address_postal_code", "phone", "avatar_updated_at",
@@ -556,16 +524,13 @@ def create_user(username, password_hash, first_name=None, last_name=None, email=
 
 
 def delete_user(user_id):
-    # Only ever called on a just-created, still-unverified signup that we're
-    # rolling back (e.g. its verification email failed to send) -- a fresh
-    # user has no trades/strategies yet, so this is a plain single-row delete.
+    # Only used to roll back a just-created signup, so a plain single-row delete is safe (no trades/strategies exist yet).
     conn = get_conn()
     conn.execute("DELETE FROM users WHERE id=?", (user_id,))
 
 
 def update_email(user_id, email):
-    # Changing the email always resets verification -- a new address is
-    # unverified by definition, and any in-flight code was for the old one.
+    # Always resets verification on email change, since a new address is unverified by definition.
     conn = get_conn()
     conn.execute(
         """UPDATE users SET email=?, email_verified=0, verification_code_hash=NULL,

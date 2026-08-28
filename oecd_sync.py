@@ -50,16 +50,9 @@ import db
 OECD_URL = "https://sdmx.oecd.org/public/rest/data/{dataset_id}/{dimension_key}?dimensionAtObservation=AllDimensions&format=jsondata"
 
 # currency -> metric -> (dataset_id, dimension_key, parse_mode)
-#   parse_mode is documentation, not dispatch: every series used here is
-#   already the percentage/rate we want straight out of OECD (CPI's "GY"
-#   transformation is already year-over-year growth, and the labour-force
-#   unemployment series is already a rate) -- there's no ratio math to do
-#   like FRED's _yoy()/_mom(), just "take the latest observation."
+#   parse_mode is documentation only -- every OECD series here is already the rate/percentage needed, no ratio math required.
 OECD_SERIES = {
-    # Dict keys are currency codes (matching db.MAJOR_CURRENCIES /
-    # fred_sync.SERIES), not the ISO country codes used inside the OECD
-    # dimension-key strings themselves (e.g. GBP the currency vs. GBR the
-    # country in "GBR.M.N.CPI...").
+    # Dict keys are currency codes, not the ISO country codes used inside OECD's own dimension-key strings (GBP vs. GBR).
     "GBP": {
         "cpi_yoy": ("OECD.SDD.TPS,DSD_PRICES@DF_PRICES_ALL,1.0", "GBR.M.N.CPI.PA._T.N.GY", "yoy_direct"),
         "unemployment": ("OECD.SDD.TPS,DSD_LFS@DF_IALFS_UNE_M,1.0", "GBR..._Z.Y._T.Y_GE15..M", "level"),
@@ -94,10 +87,7 @@ OECD_NOTES = {
 
 def _fetch_oecd_series(dataset_id, dimension_key):
     url = OECD_URL.format(dataset_id=dataset_id, dimension_key=dimension_key)
-    # OECD's edge blocks Python's default urllib User-Agent with a 403
-    # (confirmed by hand: identical request with "curl/8.0" succeeds
-    # instantly) -- the same class of bug that already bit FRED and Resend
-    # this app talks to, so this header is required, not precautionary.
+    # Required, not precautionary -- OECD 403s the default urllib User-Agent, same as FRED and Resend already did.
     req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         envelope = json.loads(resp.read().decode("utf-8"))
@@ -117,9 +107,7 @@ def _fetch_oecd_series(dataset_id, dimension_key):
         time_idx = int(key.split(":")[time_dim_index])
         period = time_values[time_idx]["id"]
         rows.append((period, float(value_list[0])))
-    # Period strings sort correctly lexicographically within one query since
-    # every observation here shares one frequency ("YYYY-MM" or "YYYY-QN"),
-    # never both mixed in the same series.
+    # Lexicographic sort works since one query never mixes monthly and quarterly period strings.
     rows.sort(key=lambda r: r[0])
     return rows
 

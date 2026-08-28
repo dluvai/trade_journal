@@ -105,12 +105,7 @@ METRIC_EXPLAINERS = {
     ),
 }
 
-# (metric key, higher value = stronger currency). Every macro metric the app
-# tracks gets scored the same way -- included in a given pair's comparison
-# only when both currencies actually have a value for it (see compare_pair),
-# so nothing is ever shown half-resolved. Unemployment is the only metric
-# where a lower reading is the stronger one; every other tracked metric
-# follows "higher is currency-positive."
+# (metric key, higher value = stronger currency). Every metric scores the same way except unemployment, where lower (not higher) is currency-stronger.
 SCORED_METRICS = [
     ("interest_rate", True),
     ("gdp_yoy", True),
@@ -150,10 +145,7 @@ def compare_pair(pair, macro_rows):
     if not base_row or not quote_row:
         return {"pair": pair, "base": base, "quote": quote, "supported": False}
 
-    # Only metrics both currencies actually have a real, distinct value for
-    # make the cut -- a metric missing on either side, or tied, has nothing
-    # meaningful to compare, so it's dropped entirely rather than shown as
-    # an unresolved "context only" row.
+    # Metrics missing on either side or tied are dropped entirely, rather than shown as an unresolved row.
     scored_rows = []
     score = {"base": 0, "quote": 0}
     for key, higher_is_stronger in SCORED_METRICS:

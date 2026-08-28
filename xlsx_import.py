@@ -79,8 +79,7 @@ def extract_sheet(ws, year):
     col_daily = find_col(header_row, "daily")
     col_4h = find_col(header_row, "4hr", "4h")
     col_30m = find_col(header_row, "30min", "30m")
-    # Session column header is unreliable ("London" literal, or "Session"); it's always
-    # the column right after Day in this workbook's layout.
+    # Session is located by position (right after Day), since its header text is unreliable.
     col_session = col_day + 1
 
     trades = []

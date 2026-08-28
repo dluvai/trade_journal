@@ -34,9 +34,7 @@ import fred_sync
 import oecd_sync
 import db
 
-# (currency, metric) -> "oecd" for the pairs verified as a concrete
-# upgrade; everything else falls through to fred_sync (FRED's own
-# per-currency coverage, itself already partial -- see fred_sync.py).
+# Only pairs verified as a concrete upgrade route to OECD; everything else falls through to FRED's own (partial) coverage.
 OECD_ROUTED = {
     ("GBP", "cpi_yoy"), ("GBP", "unemployment"),
     ("CAD", "cpi_yoy"), ("CAD", "unemployment"),
@@ -46,20 +44,12 @@ OECD_ROUTED = {
     ("CHF", "unemployment"),
 }
 
-# Every (currency, metric) job national_stats_sync.py covers -- see its
-# docstring for why each one and not others. USD's employment_change is
-# unaffected, still comes from fred_sync (nonfarm payrolls); gdp_yoy for
-# every currency (including GBP) is also unaffected, this only adds GBP's
-# monthly gdp_mom alongside it.
+# Mirrors national_stats_sync's coverage; only adds GBP's gdp_mom, leaving USD employment and everyone's gdp_yoy untouched.
 NATIONAL_STATS_ROUTED = {
     (ccy, metric) for metric, fetchers in national_stats_sync.FETCHERS.items() for ccy in fetchers
 }
 
-# interest_rate for every currency whose own central bank publishes it
-# directly -- see central_bank_rates.py's docstring for the exact source
-# per currency. USD and EUR are untouched: fred_sync's entries for both are
-# already the literal rate (DFEDTARU, ECBDFR), not a proxy, so there's
-# nothing for this router to improve on there.
+# Routes interest_rate to each currency's own central bank, except USD/EUR where fred_sync already has the literal (non-proxy) rate.
 CENTRAL_BANK_ROUTED = {(ccy, "interest_rate") for ccy in central_bank_rates.FETCHERS}
 
 
@@ -72,15 +62,7 @@ def sync(currencies=None, dry_run=False):
     currencies = currencies or list(db.MAJOR_CURRENCIES)
     existing_by_ccy = {r["currency"]: r for r in db.list_macro()}
 
-    # All four providers are queried in dry-run mode regardless of routing
-    # -- each already skips any currency missing from its own coverage, so
-    # there's no wasted work in asking all four and then picking, per
-    # (currency, metric), which report to keep. Each provider already
-    # parallelizes its own requests internally (a thread pool per
-    # provider), but the four providers themselves were still being asked
-    # one after another -- with four independent external APIs to wait on,
-    # running them concurrently too cuts total wall time to roughly the
-    # slowest single provider instead of the sum of all four.
+    # All four providers now run concurrently (each already parallel internally) since running them sequentially wasted the internal parallelism.
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         fred_future = pool.submit(fred_sync.sync, currencies=currencies, dry_run=True)
         oecd_future = pool.submit(oecd_sync.sync, currencies=currencies, dry_run=True)

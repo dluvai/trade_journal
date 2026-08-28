@@ -39,11 +39,7 @@
 let ALL_TRADES = [];
 let ALL_STRATEGIES = [];
 
-// Reuses the exact same grouping/rendering the Pairs page uses for
-// performance-by-pair -- a strategy tag on a trade is just another grouping
-// key, same as pair/day/session already are. No date filter here (only
-// Overview/Trades have one) -- this is a lifetime view of each strategy's
-// track record, not a day-to-day one.
+// Reuses the Pairs page's grouping logic; deliberately has no date filter since this is a lifetime view of each strategy.
 function renderStrategyPerformance() {
   const groups = DC.computeGroupStats(ALL_TRADES, 'strategy_name');
   const shaped = groups.map(g => ({ pair: g.key, total: g.total, wins: g.wins, pnl: g.pnl }));
@@ -141,8 +137,9 @@ strategyForm.addEventListener('submit', async (e) => {
 });
 
 (async function init() {
-  ALL_TRADES = await DC.fetchTrades();
-  loadStrategies();
+  ({ trades: ALL_TRADES, strategies: ALL_STRATEGIES } = await DC.fetchBootstrap());
+  renderStrategiesList(ALL_STRATEGIES);
+  renderStrategyPerformance();
 })();
 </script>
 {% endblock %}

@@ -39,9 +39,7 @@ def is_expired(expires_at):
 
 
 def seconds_until_resend_allowed(expires_at):
-    # A code's issue time isn't stored separately -- it's always
-    # (expires_at - CODE_TTL_MINUTES), so the cooldown is derived rather
-    # than needing its own column.
+    # Issue time is derived from expires_at - CODE_TTL_MINUTES rather than stored in its own column.
     if not expires_at:
         return 0
     issued_at = datetime.fromisoformat(expires_at) - timedelta(minutes=CODE_TTL_MINUTES)

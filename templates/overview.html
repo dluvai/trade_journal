@@ -74,7 +74,7 @@ function render() {
 }
 
 (async function init() {
-  [ALL_TRADES, ALL_ACCOUNTS] = await Promise.all([DC.fetchTrades(), DC.fetchTradingAccounts()]);
+  ({ trades: ALL_TRADES, accounts: ALL_ACCOUNTS } = await DC.fetchBootstrap());
   selectedAccountIds = ALL_ACCOUNTS.map(a => a.id).concat(['unassigned']);
   DC.renderAccountFilter('accountFilter', ALL_ACCOUNTS, selectedAccountIds, (ids, accounts) => {
     ALL_ACCOUNTS = accounts;

@@ -1,5 +1,4 @@
-/* Shared rendering logic for both dashboard.html (static, embedded data) and
-   live_dashboard.html (fetches trades.db via /api/trades and allows CRUD). */
+/* Shared render logic for the static dashboard.html export and the live, CRUD-capable app (templates/base.html). */
 const DC = (function () {
   const GOOD = 'var(--good)', CRIT = 'var(--critical)', MUTE = 'var(--muted-fill)', SERIES = 'var(--series-1)';
   const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -7,8 +6,7 @@ const DC = (function () {
 
   function fmtPct(x, digits) { digits = digits === undefined ? 1 : digits; return (x >= 0 ? '+' : '') + (x * 100).toFixed(digits) + '%'; }
 
-  // Gradient + glow treatment shared by the win-rate bars and RR histogram --
-  // gives bars depth against the dark surface instead of flat fills.
+  // Shared gradient/glow so bars read as raised against the dark surface, not flat fills.
   function barStyle(kind) {
     if (kind === 'good') return 'background:linear-gradient(180deg, #2fe07f 0%, #0ca30c 100%); box-shadow:0 3px 16px -3px rgba(12,163,12,0.55);';
     if (kind === 'bad') return 'background:linear-gradient(180deg, #ff9d9d 0%, #d6403f 100%); box-shadow:0 3px 16px -3px rgba(214,64,63,0.55);';
@@ -67,14 +65,8 @@ const DC = (function () {
     return trades.map(t => { cum += t.pnl; return { date: t.date, pair: t.pair, cum, pnl: t.pnl, result: t.result }; });
   }
 
-  // Takes computeEquity's output, not raw trades -- drawdown is a property
-  // of the cumulative curve, so there's no reason to re-derive the running
-  // total here too. Tracks a running peak ("high-water mark") and the
-  // biggest peak-to-trough gap seen anywhere in the sequence; then looks
-  // for the first later point that claws back up to that same peak to
-  // measure how long the recovery took. Index-based internally (not
-  // date-based) because multiple trades can share a date -- searching by
-  // date would risk matching the wrong same-day trade.
+  // Operates on the cumulative equity curve, not raw trades, since drawdown is a property of that curve.
+  // Tracks recovery by index, not date, since same-day trades would make a date-lookup ambiguous.
   function computeDrawdown(equityPoints) {
     if (!equityPoints.length) {
       return { maxDrawdown: 0, peakDate: null, troughDate: null, recoveryDate: null, daysToRecover: null, recovered: true };
@@ -103,8 +95,7 @@ const DC = (function () {
       recoveryDate: recoveryIdx >= 0 ? equityPoints[recoveryIdx].date : null,
       daysToRecover: recoveryIdx >= 0 ? daysBetween(equityPoints[ddTroughIdx].date, equityPoints[recoveryIdx].date) : null,
       recovered: recoveryIdx >= 0,
-      // raw positions too, so a caller that already has the same points
-      // array (the equity chart) can draw the band without re-searching
+      // Also returns raw index positions so the equity chart can draw the drawdown band without re-searching.
       peakIdx: ddPeakIdx, troughIdx: ddTroughIdx, recoveryIdx,
     };
   }
@@ -164,11 +155,7 @@ const DC = (function () {
   function renderTiles(hostId, stats, drawdown) {
     const host0 = document.getElementById(hostId);
     if (!host0) return;
-    // With zero trades in range, every ratio computes to a meaningless 0 --
-    // coloring that red/green (a 0% win rate reading as a "bad" critical
-    // result, a break-even return reading as "good") makes an empty range
-    // look like a losing day instead of just an unfilled one. Neutral
-    // dashes instead, matching how "Current streak" already handles zero.
+    // Zero-trade ranges show neutral dashes instead of red/green 0%, so an empty range doesn't read as a loss.
     const noData = stats.total === 0;
     const pf = isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞';
     const tiles = [
@@ -226,9 +213,7 @@ const DC = (function () {
       xLabelsSvg += `<text class="axis-label" x="${x(idx).toFixed(2)}" y="${H - 6}" text-anchor="middle">${points[idx].date.slice(5)}</text>`;
     }
 
-    // Shade the worst peak-to-trough stretch directly on the curve -- a
-    // number in a tile tells you "how deep"; seeing exactly where and how
-    // long tells you a lot more about what happened in the account.
+    // Shades the worst drawdown stretch on the curve itself, since a tile number alone doesn't show where/how long it lasted.
     let drawdownSvg = '';
     if (drawdown && drawdown.maxDrawdown > 0) {
       const ddEndIdx = drawdown.recoveryIdx >= 0 ? drawdown.recoveryIdx : points.length - 1;
@@ -366,9 +351,7 @@ const DC = (function () {
 
   // ---------- monthly return heatmap ----------
 
-  // Persists across renders (same pattern as calCursor for the trade
-  // calendar) so re-rendering on a filter change doesn't snap the picker
-  // back to some default year out from under the user.
+  // Persisted across renders so a filter change doesn't reset the year picker out from under the user.
   let monthlyReturnYear = null;
 
   function renderMonthHeatmap(hostId, trades, yearFilterId) {
@@ -416,7 +399,7 @@ const DC = (function () {
       renderSimpleSelect(yearFilterId, years.map(y => ({ value: y, label: y })), monthlyReturnYear, (y) => {
         monthlyReturnYear = y;
         renderMonthHeatmap(hostId, trades, yearFilterId);
-      });
+      }, 'right');
     }
   }
 
@@ -752,9 +735,7 @@ const DC = (function () {
   const ALL_TIME_RANGE = { preset: 'all', start: '0000-01-01', end: '9999-12-31' };
 
   function defaultDateRange() {
-    // Overview/Trades both open on the last 7 days, not All Time -- a
-    // freshly-loaded dashboard should read as "recent activity," not a
-    // lifetime dump that has to be manually narrowed every session.
+    // Defaults to the last 7 days (not All Time) so a fresh load reads as recent activity, not a full history dump.
     const bounds = computeDateRangeBounds('7d', null, null, localTodayStr());
     return { preset: '7d', start: bounds.start, end: bounds.end };
   }
@@ -763,12 +744,7 @@ const DC = (function () {
     if (preset === 'all') return { start: '0000-01-01', end: '9999-12-31' };
     if (preset === 'custom') return { start: customStart || '0000-01-01', end: customEnd || '9999-12-31' };
     if (preset === 'today') return { start: todayStr, end: todayStr };
-    // Pure calendar-date arithmetic, anchored via Date.UTC and read back via
-    // toISOString -- never parses todayStr as local time. Mixing a local-time
-    // Date (e.g. `new Date(todayStr + 'T00:00:00')`) with a UTC-based
-    // toISOString() read-back silently shifts the result by a day whenever
-    // the browser's timezone offset isn't zero (confirmed by hand: broke
-    // "Yesterday" specifically, since "Today" bypasses this math entirely).
+    // Anchors all date math in UTC (Date.UTC + toISOString), never local-time parsing, which silently shifted results by a day and broke "Yesterday".
     const [y, m, d] = todayStr.split('-').map(Number);
     const DAY_MS = 86400000;
     const todayUTC = Date.UTC(y, m - 1, d);
@@ -777,9 +753,7 @@ const DC = (function () {
       const day = fmt(todayUTC - DAY_MS);
       return { start: day, end: day };
     }
-    // Fixed day-counts rather than calendar-month arithmetic (setMonth),
-    // to sidestep month-length/leap-year edge cases -- "1 Month" is 30
-    // days back, not "the same day last calendar month".
+    // Fixed day-counts, not setMonth, to sidestep month-length/leap-year edge cases.
     const daysBack = { '7d': 6, '1m': 30, '3m': 90, '6m': 182, '12m': 365, '24m': 730 }[preset];
     return { start: fmt(todayUTC - daysBack * DAY_MS), end: todayStr };
   }
@@ -789,19 +763,12 @@ const DC = (function () {
   }
 
   function localTodayStr() {
-    // Local calendar date, not UTC -- toISOString() reflects UTC, which can
-    // land on a different calendar day than the trader's own "today"
-    // depending on timezone and time of day.
+    // Uses the local calendar date, not toISOString()'s UTC date, which can land on a different day depending on timezone.
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
-  // Custom glass popover, not a native <select> -- a native select's open
-  // option list is painted by the OS/browser and ignores backdrop-filter
-  // and border-radius entirely, so it always looked like a plain opaque
-  // box no matter what CSS was applied to the closed control. Mirrors
-  // renderAccountFilter's trigger+popover+outside-click pattern exactly
-  // so every dropdown in the app shares the same glass material.
+  // Custom glass popover, not a native <select>, since the OS paints native option lists and ignores backdrop-filter/border-radius.
   function renderDateRangeFilter(hostId, currentRange, onChange) {
     const el = document.getElementById(hostId);
     if (!el) return;
@@ -809,7 +776,7 @@ const DC = (function () {
     const labelFor = (preset) => (DATE_RANGE_PRESETS.find(([v]) => v === preset) || [null, preset])[1];
 
     el.innerHTML = `
-      <div class="mini-select">
+      <div class="mini-select mini-select-right">
         <button type="button" class="iconbtn mini-select-trigger" aria-expanded="false" aria-haspopup="true">
           <span class="mini-select-label">${labelFor(currentRange.preset)}</span><span class="account-filter-caret">▾</span>
         </button>
@@ -867,22 +834,27 @@ const DC = (function () {
     });
   }
 
-  // Generic small glass-popover dropdown (single-select, no custom-range
-  // extras) -- reused for things like the monthly-return year picker.
-  // options: [{value, label}]. currentValue must match one option's value.
-  function renderSimpleSelect(hostId, options, currentValue, onSelect) {
+  // Generic glass-popover dropdown reused across the app (year picker, currency switchers, etc).
+  // options: [{value, label}], or {divider:true}/{header:label} for non-selectable group markers.
+  // align: 'left' (default, extends rightward -- for a trigger near the start of its row) or
+  // 'right' (extends leftward -- for a trigger at the right end of its row, e.g. a workspace-head).
+  function renderSimpleSelect(hostId, options, currentValue, onSelect, align) {
     const el = document.getElementById(hostId);
     if (!el) return;
     const labelFor = (v) => (options.find(o => o.value === v) || {}).label ?? v;
+    const optionHtml = (o) => {
+      if (o.divider) return '<div class="mini-select-divider"></div>';
+      if (o.header) return `<div class="mini-select-header">${o.header}</div>`;
+      return `<div class="mini-select-option ${o.value === currentValue ? 'is-active' : ''}" data-value="${o.value}">${o.label}</div>`;
+    };
 
     el.innerHTML = `
-      <div class="mini-select">
+      <div class="mini-select ${align === 'right' ? 'mini-select-right' : ''}">
         <button type="button" class="iconbtn mini-select-trigger" aria-expanded="false" aria-haspopup="true">
           <span class="mini-select-label">${labelFor(currentValue)}</span><span class="account-filter-caret">▾</span>
         </button>
         <div class="mini-select-popover">
-          ${options.map(o => `
-            <div class="mini-select-option ${o.value === currentValue ? 'is-active' : ''}" data-value="${o.value}">${o.label}</div>`).join('')}
+          ${options.map(optionHtml).join('')}
         </div>
       </div>`;
 
@@ -918,11 +890,8 @@ const DC = (function () {
 
   // ---------- account filter (Overview/Trades only) ----------
 
-  // selectedIds holds real account ids (numbers) plus the sentinel string
-  // 'unassigned' for trades with no account_id (or one pointing at a
-  // since-deleted account -- see renderAccountComparisonTable). Mutated in
-  // place on every checkbox toggle rather than rebuilt, so the popover
-  // doesn't visually collapse mid-interaction while ticking several boxes.
+  // selectedIds mixes real account ids with the 'unassigned' sentinel, and is mutated in place
+  // so the popover doesn't visually collapse mid-toggle.
   function renderAccountFilter(hostId, accounts, selectedIds, onChange) {
     const host = document.getElementById(hostId);
     if (!host) return;
@@ -1014,9 +983,7 @@ const DC = (function () {
       closePopover();
       openAccountManageModal(() => {
         fetchTradingAccounts().then(freshAccounts => {
-          // Keep existing selections, and auto-select any brand new account
-          // (matches "nothing is hidden by default" -- see renderAll's
-          // ticked-by-default rule at page init).
+          // New accounts are auto-selected to match the app's "nothing hidden by default" rule.
           freshAccounts.forEach(a => { if (!selectedIds.includes(a.id)) selectedIds.push(a.id); });
           renderAccountFilter(hostId, freshAccounts, selectedIds, onChange);
           onChange(selectedIds, freshAccounts);
@@ -1025,13 +992,8 @@ const DC = (function () {
     });
   }
 
-  // Groups trades ticked-account-first: real accounts get an exact
-  // account_id match, and the 'unassigned' bucket (if ticked) catches
-  // everything else -- including trades whose account_id points at an
-  // account that's since been deleted, matching row_to_dict's own
-  // server-side "Unassigned" fallback for the same case. Returns false
-  // (and renders nothing) when fewer than 2 groups are actually ticked,
-  // so the caller knows whether to show or hide the comparison panel.
+  // Groups trades by ticked account (the 'unassigned' bucket also catches deleted-account trades)
+  // and returns false when fewer than 2 groups are ticked, so the caller knows to hide the panel.
   function renderAccountComparisonTable(hostId, trades, accounts, selectedIds) {
     const groups = [];
     accounts.forEach(a => {
@@ -1180,8 +1142,38 @@ const DC = (function () {
   }
 
   async function fetchTrades() { const r = await fetch('/api/trades'); return r.json(); }
-  async function fetchStrategies() { const r = await fetch('/api/strategies'); return r.json(); }
-  async function fetchTradingAccounts() { const r = await fetch('/api/trading-accounts'); return r.json(); }
+
+  // Every page's own init AND the shared Add/Edit Trade modal's init (base.html, present on
+  // every page) each ask for strategies/accounts -- coalescing concurrent calls into one
+  // in-flight request avoids firing the same query twice on a single page load. Resets once
+  // resolved, so a later intentional refetch (e.g. after creating an account) still hits the network.
+  let _strategiesInFlight = null;
+  async function fetchStrategies() {
+    if (!_strategiesInFlight) {
+      _strategiesInFlight = fetch('/api/strategies').then(r => r.json()).finally(() => { _strategiesInFlight = null; });
+    }
+    return _strategiesInFlight;
+  }
+  let _accountsInFlight = null;
+  async function fetchTradingAccounts() {
+    if (!_accountsInFlight) {
+      _accountsInFlight = fetch('/api/trading-accounts').then(r => r.json()).finally(() => { _accountsInFlight = null; });
+    }
+    return _accountsInFlight;
+  }
+
+  // For page init, where 2-3 of {trades, accounts, strategies} are needed together --
+  // one /api/bootstrap round trip instead of several concurrent single-purpose ones (same
+  // contention problem the coalescing above works around, but this avoids it outright).
+  // Coalesced the same way, so a page's own init and the trade modal's init (which both
+  // want this at load time) share one network call.
+  let _bootstrapInFlight = null;
+  async function fetchBootstrap() {
+    if (!_bootstrapInFlight) {
+      _bootstrapInFlight = fetch('/api/bootstrap').then(r => r.json()).finally(() => { _bootstrapInFlight = null; });
+    }
+    return _bootstrapInFlight;
+  }
   async function deleteTrade(id) { await fetch(`/api/trades/${id}`, { method: 'DELETE' }); }
 
   // ---------- live price ticker (global chrome, present on every page) ----------
@@ -1208,12 +1200,7 @@ const DC = (function () {
     </div>`;
   }
 
-  // The strip scrolls via a single continuous CSS animation on .ticker-track
-  // (see .ticker-strip:hover pausing it in dashboard-core.css). Replacing that
-  // element's innerHTML on every refresh would restart the animation from 0%
-  // every time -- a visible stutter every 20s. So after the first paint, later
-  // refreshes patch each item's text in place and never touch .ticker-track
-  // itself, keeping the scroll running with zero interruption.
+  // Refreshes patch each ticker item's text in place instead of replacing innerHTML, which would restart the CSS scroll animation and stutter.
   async function loadTicker() {
     const host = document.getElementById('tickerStrip');
     if (!host) return;
@@ -1248,28 +1235,42 @@ const DC = (function () {
   function initTicker() {
     if (!document.getElementById('tickerStrip')) return;
     loadTicker();
-    // 15s, not 3s -- this app polls 10 external tickers on every tick
-    // (market_data.py fans them out in parallel, ~1-3s round trip each),
-    // so a 3s interval meant a fresh externally-bound fetch was almost
-    // always in flight, and its matching 3s server-side cache TTL never
-    // actually got a chance to serve a cached hit. 15s still feels live
-    // for a personal journal, not a scalping terminal.
+    // 15s poll interval (not 3s) so the server-side cache TTL actually gets a chance to serve cached hits.
     setInterval(loadTicker, 15000);
   }
 
   // ---------- global add/edit trade modal (global chrome, present on every page) ----------
 
   let tradeModalState = null; // { editingId } once initialized
-  // A page registers this to re-fetch and re-render its own view in place
-  // after a save -- falls back to a full reload if no page has claimed it
-  // (e.g. the modal is technically reachable from any page via base.html,
-  // even though only Trades actually wires up Add/Edit today).
+  // Falls back to a full reload if no page registered a save handler, since the modal is reachable from every page.
   let tradeSavedHandler = null;
   function setTradeSavedHandler(fn) { tradeSavedHandler = fn; }
 
-  // Exposed so a page's own script can look a trade up by id (from its own
-  // locally-fetched ALL_TRADES) and hand the full object to this shared modal --
-  // decouples the modal from any one page owning the trades array.
+  // Dropdowns are backed by a hidden <input> for native form compatibility, with strategy/account
+  // options fetched once and cached here so syncTradeSelects can re-render on demand.
+  const TRADE_SESSION_OPTIONS = [
+    { value: 'London', label: 'London' }, { value: 'New York', label: 'New York' }, { value: 'Asia', label: 'Asia' },
+  ];
+  const TRADE_DIRECTION_OPTIONS = [{ value: 'Long', label: 'Long' }, { value: 'Short', label: 'Short' }];
+  let tradeStrategyOptions = [{ value: '', label: 'No strategy' }];
+  let tradeAccountOptions = [{ value: '', label: 'Unassigned' }];
+
+  function syncTradeSelects(tradeForm) {
+    renderSimpleSelect('tradeSessionSelect', TRADE_SESSION_OPTIONS, tradeForm.session.value, (v) => {
+      tradeForm.session.value = v; syncTradeSelects(tradeForm);
+    });
+    renderSimpleSelect('tradeDirectionSelect', TRADE_DIRECTION_OPTIONS, tradeForm.direction.value, (v) => {
+      tradeForm.direction.value = v; syncTradeSelects(tradeForm);
+    });
+    renderSimpleSelect('tradeStrategySelect', tradeStrategyOptions, tradeForm.strategy_id.value, (v) => {
+      tradeForm.strategy_id.value = v; syncTradeSelects(tradeForm);
+    });
+    renderSimpleSelect('tradeAccountSelect', tradeAccountOptions, tradeForm.account_id.value, (v) => {
+      tradeForm.account_id.value = v; syncTradeSelects(tradeForm);
+    });
+  }
+
+  // Exposed so any page can hand a trade object to this shared modal without the modal owning a trades array itself.
   function openEditTradeModal(trade) {
     if (!tradeModalState) return;
     const tradeForm = document.getElementById('tradeForm');
@@ -1288,6 +1289,7 @@ const DC = (function () {
     tradeForm.chart_daily.value = (trade.charts.find(c => c.label === 'Daily') || {}).link || '';
     tradeForm.chart_4h.value = (trade.charts.find(c => c.label === '4H') || {}).link || '';
     tradeForm.chart_30m.value = (trade.charts.find(c => c.label === '30M') || {}).link || '';
+    syncTradeSelects(tradeForm);
     document.getElementById('formError').textContent = '';
     document.getElementById('modalBackdrop').classList.remove('hidden');
   }
@@ -1299,16 +1301,14 @@ const DC = (function () {
     document.getElementById('formTitle').textContent = 'Add Trade';
     tradeForm.reset();
     tradeForm.date.value = new Date().toISOString().slice(0, 10);
+    syncTradeSelects(tradeForm);
     document.getElementById('formError').textContent = '';
     document.getElementById('modalBackdrop').classList.remove('hidden');
     tradeForm.pair.focus();
   }
 
-  // Wires the global Add/Edit Trade modal (present in base.html on every
-  // page). Populates the strategy dropdown itself so no page needs to fetch
-  // strategies just to support the modal. On save, hands off to whatever
-  // the current page registered via setTradeSavedHandler (re-fetch +
-  // re-render in place); falls back to a reload if nothing registered.
+  // Wires the shared modal, populating strategies itself and delegating post-save refresh to
+  // whatever handler the current page registered (or reloading if none did).
   function initTradeModal() {
     const modalBackdrop = document.getElementById('modalBackdrop');
     if (!modalBackdrop) return;
@@ -1316,17 +1316,12 @@ const DC = (function () {
     const tradeForm = document.getElementById('tradeForm');
     const formError = document.getElementById('formError');
 
-    fetchStrategies().then(strategies => {
-      const select = document.getElementById('tradeStrategySelect');
-      select.innerHTML = '<option value="">No strategy</option>' +
-        strategies.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-    }).catch(() => {});
+    syncTradeSelects(tradeForm);
 
-    fetchTradingAccounts().then(accounts => {
-      const select = document.getElementById('tradeAccountSelect');
-      if (!select) return;
-      select.innerHTML = '<option value="">Unassigned</option>' +
-        accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    fetchBootstrap().then(({ strategies, accounts }) => {
+      tradeStrategyOptions = [{ value: '', label: 'No strategy' }].concat(strategies.map(s => ({ value: String(s.id), label: s.name })));
+      tradeAccountOptions = [{ value: '', label: 'Unassigned' }].concat(accounts.map(a => ({ value: String(a.id), label: a.name })));
+      syncTradeSelects(tradeForm);
     }).catch(() => {});
 
     function closeForm() {
@@ -1397,8 +1392,7 @@ const DC = (function () {
   }
 
   // ---------- contrast (client-only, localStorage) ----------
-  // Dark is the only theme this app offers -- see dashboard-core.css's
-  // header comment. Contrast stays a real, separate accessibility toggle.
+  // Contrast is a separate accessibility toggle, independent of the (single, dark-only) theme.
   function applyContrast(level) {
     level === 'high' ? document.documentElement.setAttribute('data-contrast', 'high') : document.documentElement.removeAttribute('data-contrast');
   }
@@ -1411,11 +1405,11 @@ const DC = (function () {
   return {
     fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
-    apiSend, fetchTrades, fetchStrategies, fetchTradingAccounts, deleteTrade,
+    apiSend, fetchTrades, fetchStrategies, fetchTradingAccounts, fetchBootstrap, deleteTrade,
     renderAccountFilter, renderAccountComparisonTable, openAccountManageModal,
     initTicker, initTradeModal, openAddTradeModal, openEditTradeModal, initMobileSidebar, setTradeSavedHandler,
     setContrast, getStoredContrast,
     computeDateRangeBounds, filterTradesByRange, renderDateRangeFilter, ALL_TIME_RANGE, DATE_RANGE_PRESETS, localTodayStr,
-    defaultDateRange,
+    defaultDateRange, renderSimpleSelect,
   };
 })();

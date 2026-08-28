@@ -28,9 +28,7 @@ TABLES = ["users", "trades", "strategies", "settings", "macro"]
 
 
 def _has_backup_today():
-    # backup_now() names files with a full date_time stamp (so calling it
-    # twice in a day doesn't clobber the first copy) -- so "already backed
-    # up today" has to check by prefix, not for one exact filename.
+    # Checks by filename prefix, not an exact name, since backup_now() timestamps files so same-day calls don't clobber each other.
     if not BACKUP_DIR.exists():
         return False
     today_prefix = f"{FILENAME_PREFIX}{date.today().isoformat()}"

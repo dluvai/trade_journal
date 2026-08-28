@@ -3,8 +3,8 @@
 {% block content %}
 <div class="panel" style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
   <h2 style="margin:0;">Currency</h2>
-  <select id="ccySwitcher" class="macro-input" style="width:auto; font-family:var(--font-mono); font-size:14px; padding:7px 12px;"></select>
   <span style="color:var(--text-muted); font-size:11.5px;">Shows this currency's macro details below.</span>
+  <div id="ccySwitcher" style="margin-left:auto;"></div>
 </div>
 <div class="panel" id="debtPanel" style="display:none;">
   <h2>US Federal Debt Sustainability <span class="n" id="debtAsOf"></span></h2>
@@ -12,11 +12,13 @@
 </div>
 <div class="panel" id="fundamentalsPanel">
   <h2>Fundamentals</h2>
-  <div id="fundamentalsCompareRow" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
+  <div id="fundamentalsCompareRow" style="display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; gap:10px; margin-bottom:4px;">
     <span style="font-family:var(--font-mono); font-weight:600; font-size:14px;" id="biasBaseLabel">USD</span>
-    <span style="color:var(--text-muted); font-size:12px;">vs</span>
-    <select id="compareCcy" class="macro-input" style="width:auto; font-family:var(--font-mono); font-size:14px; padding:7px 12px;"></select>
-    <span id="biasError" style="color:var(--critical); font-size:12px;"></span>
+    <span style="color:var(--text-secondary); font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;">vs</span>
+    <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px;">
+      <div id="compareCcy"></div>
+      <span id="biasError" style="color:var(--critical); font-size:12px;"></span>
+    </div>
   </div>
   <div id="fundamentalsResult" style="margin-top:16px;"></div>
 </div>
@@ -59,36 +61,19 @@
 {% block scripts %}
 <script>
 const CCY_ORDER = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD'];
-// Not currencies -- deliberately kept out of CCY_ORDER (which drives the FX
-// pairing/comparison logic below) and shown as a separate dropdown group.
-// XAU gets its own real-rate-proxy bias view (see computeGoldBias); NQ/ES
-// get news only, no bias -- see market_data.py's CURRENCY_NEWS_QUERIES for
-// why a bias verdict isn't attempted for equity indices.
+// XAU/NQ/ES are kept out of CCY_ORDER since they aren't currencies; gold gets its own bias view, NQ/ES get news only.
 const EXTRA_INSTRUMENTS = [
   { key: 'XAU', label: 'XAU (Gold)' },
   { key: 'NQ', label: 'NQ (Nasdaq 100)' },
   { key: 'ES', label: 'ES (S&P 500)' },
 ];
 const ALL_SELECTABLE = CCY_ORDER.concat(EXTRA_INSTRUMENTS.map(i => i.key));
-// Standard FX market quoting hierarchy -- whichever currency comes first here
-// is always the base when paired with anything later in the list (this is
-// why it's EURUSD not USDEUR, USDJPY not JPYUSD, etc). CAD sits right after
-// USD since USD/CAD quotes USD as the base.
+// Order defines FX quoting convention -- earlier currency is always the base (hence CAD right after USD).
 const FX_HIERARCHY = ['EUR', 'GBP', 'AUD', 'NZD', 'USD', 'CAD', 'CHF', 'JPY'];
-// Grouped the way the workspace displays them -- e.g. every inflation
-// gauge (headline/core CPI, core PPI, core PCE) sits in one Inflation card
-// instead of four separate tiles. Coverage beyond the original 5 metrics
-// (core CPI/PPI/PCE, retail sales, trade balance, current account) is
-// USD-only -- see fred_sync.py's docstring for why.
-// `applies` lists which currencies a metric is meaningful for -- omitted
-// means every currency. Rate/CPI/unemployment/GDP/PMI are conceptually
-// universal (manual entry makes sense even where nothing auto-syncs), but
-// things like Core PCE are literally a US National Accounts concept -- no
-// point offering an input a non-USD currency can never have real data in.
-// Each metric's `note` explains, in plain terms, how it feeds into currency
-// strength -- shown as a hover tooltip on the card (see metricRowHtml).
-// Wording for interest_rate/unemployment/gdp_yoy/pmi/cpi_yoy matches
-// fundamentals.py's METRIC_EXPLAINERS for the ones both share.
+// Grouped by display card, e.g. all inflation gauges share one card.
+// `applies` restricts a metric to specific currencies; omitted means universal.
+// `note` is the hover-tooltip explainer shown in metricRowHtml.
+// Wording for shared metrics matches fundamentals.py's METRIC_EXPLAINERS.
 const METRIC_GROUPS = [
   { title: 'Policy', metrics: [
     { key: 'interest_rate', label: 'Policy rate', suffix: '%', step: '0.01',
@@ -117,17 +102,14 @@ const METRIC_GROUPS = [
   { title: 'GDP', metrics: [
     { key: 'gdp_yoy', label: 'GDP YoY', suffix: '%', step: '0.01',
       note: 'Faster GDP growth signals a healthier economy and more attractive returns for foreign investors -- generally currency-positive.' },
-    { key: 'gdp_mom', label: 'GDP MoM', suffix: '%', step: '0.01', applies: ['GBP'],
-      note: 'A more immediate, noisier read on growth than the annual figure -- the UK is the only major economy that publishes GDP monthly rather than just quarterly.' },
+    { key: 'gdp_mom', label: 'GDP MoM', suffix: '%', step: '0.01', applies: ['GBP', 'CAD'],
+      note: 'A more immediate, noisier read on growth than the annual figure -- the UK and Canada are the majors that publish GDP monthly rather than just quarterly.' },
   ] },
   { title: 'PMI', metrics: [
     { key: 'pmi', label: 'PMI', suffix: '', step: '0.1',
       note: 'A PMI above 50 signals expansion in manufacturing activity, below 50 signals contraction. Rising PMI usually supports the currency as it points to accelerating economic activity.' },
   ] },
-  // Last on purpose, and laid out as a wide 2-column card (see .wide in
-  // dashboard-core.css) -- it has up to 6 rows depending on the currency,
-  // more than any other card, so stacked in one narrow column it towered
-  // over its neighbors and stretched their whole grid row to match.
+  // Ordered last and laid out wide (.wide, dashboard-core.css) since Inflation can run to 6 rows -- more than any other card.
   { title: 'Inflation', wide: true, metrics: [
     { key: 'cpi_yoy', label: 'CPI YoY', suffix: '%', step: '0.01',
       note: 'Rising inflation above target often pushes the central bank toward tightening (rate hikes), which can be currency-supportive in the near term -- but persistently high inflation erodes purchasing power and can weaken the currency over the long run.' },
@@ -146,13 +128,11 @@ const METRIC_GROUPS = [
   ] },
 ];
 const METRIC_META = METRIC_GROUPS.flatMap(g => g.metrics);
-// { metric_key: 'YYYY-MM-DD' } for USD metrics with a real FRED release
-// calendar entry -- stays {} if FRED_API_KEY isn't set (see fred_calendar.py).
+// { metric_key: 'YYYY-MM-DD' }; stays empty if FRED_API_KEY isn't set (see fred_calendar.py).
 let RELEASE_CALENDAR = {};
 // { currency: 'YYYY-MM-DD' or null } next policy-rate decision -- see rate_calendar.py.
 let RATE_CALENDAR = {};
-// Persisted across reloads/navigation so switching currencies then hitting
-// refresh (or coming back later) doesn't silently dump you back on USD.
+// Persisted so a refresh/return visit doesn't silently reset the selected currency to USD.
 let selectedCcy = (function() {
   try {
     const stored = localStorage.getItem('sf-macro-ccy');
@@ -200,9 +180,7 @@ function metricRowHtml(row, meta) {
     </div>`;
 }
 
-// interest_rate's "next" date depends on which currency is selected (a rate
-// decision, from rate_calendar.py); every other metric's "next" date is a
-// fixed USD statistical release (from fred_calendar.py).
+// interest_rate's next date is per-currency (rate_calendar.py); every other metric's is a fixed USD release (fred_calendar.py).
 function nextDateFor(metricKey) {
   if (metricKey === 'interest_rate') return RATE_CALENDAR[selectedCcy] || null;
   return RELEASE_CALENDAR[metricKey] || null;
@@ -218,10 +196,7 @@ function categoryCardHtml(row, group, ccy) {
     </div>`;
 }
 
-// Fixed, always-shown glance-level readout -- the four metrics that
-// actually move FX bias day to day; GDP/PMI/trade balance move too
-// slowly, and retail sales/current account are noisy, to be worth a
-// glance-level signal.
+// Shows only the four metrics that actually move day-to-day FX bias -- others are too slow or too noisy for a glance.
 const QUICK_SIGNAL_KEYS = ['interest_rate', 'cpi_yoy', 'core_pce_yoy', 'unemployment'];
 
 function quickSignalsHtml(row) {
@@ -237,14 +212,7 @@ function quickSignalsHtml(row) {
   return `<div class="quick-signals"><span class="signal-eyebrow">Quick signals</span>${parts.join('')}</div>`;
 }
 
-// Gold has no rate/GDP/unemployment/PMI of its own, so it can't use the same
-// scoring model as the fiat pairs. Real yield (nominal rate minus inflation)
-// is the most established driver of gold vs USD -- when real yield is
-// negative, holding cash loses purchasing power and gold (which pays no
-// yield but holds value) becomes relatively more attractive, and vice versa.
-// This deliberately does NOT capture geopolitical/safe-haven demand (wars,
-// crises, central bank buying) -- there's no macro series for that, so
-// factor current events in yourself on top of this.
+// Uses real yield (rate - CPI) as gold's bias driver since it has no macro data of its own; deliberately excludes geopolitical/safe-haven demand.
 function computeGoldBias(usdRow) {
   if (!usdRow || usdRow.interest_rate == null || usdRow.cpi_yoy == null) return { bias: null, realYield: null };
   const realYield = Math.round((usdRow.interest_rate - usdRow.cpi_yoy) * 100) / 100;
@@ -252,22 +220,20 @@ function computeGoldBias(usdRow) {
   return { bias, realYield };
 }
 
-// The currency dropdown drives the workspace below it AND the fundamental
-// bias check's base currency; a second dropdown picks what to compare it
-// against (any other major -- EUR, JPY, GBP, whatever), defaulting to USD
-// (or EUR specifically when USD itself is the base, so there's always a
-// real comparison rather than a dead state). Both changes auto-run the
-// comparison immediately -- no button, no typing a pair.
+// Currency dropdown drives both the workspace and the bias-check base; comparison auto-runs on either dropdown change.
 function defaultCompareFor(ccy) {
   return ccy === 'USD' ? 'EUR' : 'USD';
 }
 
+let selectedCompareCcy = null;
+
 function populateCompareDropdown() {
-  const sel = document.getElementById('compareCcy');
-  const current = sel.value;
   const options = CCY_ORDER.filter(c => c !== selectedCcy);
-  sel.innerHTML = options.map(c => `<option value="${c}">${c}</option>`).join('');
-  sel.value = options.includes(current) ? current : defaultCompareFor(selectedCcy);
+  if (!options.includes(selectedCompareCcy)) selectedCompareCcy = defaultCompareFor(selectedCcy);
+  DC.renderSimpleSelect('compareCcy', options.map(c => ({ value: c, label: c })), selectedCompareCcy, (v) => {
+    selectedCompareCcy = v;
+    loadFundamentals();
+  }, 'right');
 }
 
 function onCcyChange() {
@@ -276,15 +242,14 @@ function onCcyChange() {
 
   const isExtra = !CCY_ORDER.includes(selectedCcy);
   document.getElementById('macroWorkspacePanel').style.display = isExtra ? 'none' : '';
-  document.getElementById('fundamentalsCompareRow').style.display = isExtra ? 'none' : '';
+  document.getElementById('fundamentalsCompareRow').style.display = isExtra ? 'none' : 'grid';
 
   if (selectedCcy === 'XAU') {
     document.getElementById('fundamentalsPanel').style.display = '';
     document.getElementById('biasError').textContent = '';
     renderGoldBiasPanel(document.getElementById('fundamentalsResult'));
   } else if (isExtra) {
-    // NQ/ES -- no fundamentals bias attempted (see market_data.py's
-    // CURRENCY_NEWS_QUERIES comment for why), news panel only.
+    // NQ/ES get news only, no fundamentals bias (see market_data.py's CURRENCY_NEWS_QUERIES).
     document.getElementById('fundamentalsPanel').style.display = 'none';
   } else {
     document.getElementById('fundamentalsPanel').style.display = '';
@@ -295,14 +260,7 @@ function onCcyChange() {
   }
 }
 
-// Gold has no macro data of its own (no rate, no CPI) so it doesn't fit
-// the currency-pair comparison model -- what actually drives it is the
-// real interest rate (nominal rate minus inflation), which sets the
-// opportunity cost of holding a non-yielding asset. A real, well-
-// documented relationship, but a simplified one: the market's own
-// convention uses actual 10-year TIPS yields, which this app doesn't
-// track -- USD's policy rate and headline CPI are a rougher stand-in
-// (see computeGoldBias above).
+// Real-yield gold model is a simplified stand-in -- the market convention uses actual TIPS yields, which this app doesn't track.
 function renderGoldBiasPanel(host) {
   const usdRow = LATEST_MACRO_ROWS.find(r => r.currency === 'USD') || {};
   const g = computeGoldBias(usdRow);
@@ -327,18 +285,14 @@ function renderGoldBiasPanel(host) {
 }
 
 function renderCcySwitcher() {
-  const sel = document.getElementById('ccySwitcher');
-  if (!sel.options.length) {
-    const ccyOptions = CCY_ORDER.map(c => `<option value="${c}">${c}</option>`).join('');
-    const extraOptions = EXTRA_INSTRUMENTS.map(i => `<option value="${i.key}">${i.label}</option>`).join('');
-    sel.innerHTML = ccyOptions + `<optgroup label="Other">${extraOptions}</optgroup>`;
-    sel.addEventListener('change', () => {
-      selectedCcy = sel.value;
-      try { localStorage.setItem('sf-macro-ccy', selectedCcy); } catch (e) {}
-      onCcyChange();
-    });
-  }
-  sel.value = selectedCcy;
+  const options = CCY_ORDER.map(c => ({ value: c, label: c }))
+    .concat([{ divider: true }, { header: 'Other' }])
+    .concat(EXTRA_INSTRUMENTS.map(i => ({ value: i.key, label: i.label })));
+  DC.renderSimpleSelect('ccySwitcher', options, selectedCcy, (v) => {
+    selectedCcy = v;
+    try { localStorage.setItem('sf-macro-ccy', selectedCcy); } catch (e) {}
+    onCcyChange();
+  }, 'right');
 }
 
 // USD-only debt-sustainability snapshot -- see debt_model.py for the formula.
@@ -373,8 +327,7 @@ async function loadDebtSnapshot() {
   `;
 }
 
-// USD-only real release-calendar dates (see fred_calendar.py) -- silently
-// stays empty if FRED_API_KEY isn't set, no error shown for that case.
+// USD-only release-calendar dates (see fred_calendar.py); silently stays empty (no error shown) if FRED_API_KEY isn't set.
 async function loadReleaseCalendar() {
   try {
     RELEASE_CALENDAR = await (await fetch('/api/release-calendar')).json();
@@ -384,9 +337,7 @@ async function loadReleaseCalendar() {
   renderMacroWorkspace(LATEST_MACRO_ROWS);
 }
 
-// Policy-rate decision dates -- USD/EUR/GBP/JPY/AUD/CAD only (see
-// rate_calendar.py for why NZD/CHF aren't included: their sites couldn't be
-// verified by hand).
+// NZD/CHF excluded since their rate-decision sites couldn't be verified by hand (see rate_calendar.py).
 async function loadRateCalendar() {
   try {
     RATE_CALENDAR = await (await fetch('/api/rate-calendar')).json();
@@ -396,12 +347,7 @@ async function loadRateCalendar() {
   renderMacroWorkspace(LATEST_MACRO_ROWS);
 }
 
-// Only the selected currency's data is ever fetched into view/edited at once --
-// the rest sit sidelined behind the switcher instead of all rendering together.
-// No-ops for XAU/NQ/ES -- they don't have a row in the macro table (no
-// rate, CPI, etc. of their own), and onCcyChange() already hides this
-// panel entirely for them; called from a couple of other places too
-// (loadReleaseCalendar/loadRateCalendar) that don't know about that state.
+// No-op for XAU/NQ/ES, which have no macro-table row; also called from loadReleaseCalendar/loadRateCalendar which don't track that state.
 function renderMacroWorkspace(rows) {
   if (!CCY_ORDER.includes(selectedCcy)) return;
   const byCcy = {};
@@ -481,9 +427,7 @@ function renderFundamentals(host, data) {
     host.innerHTML = `<div class="empty">No macro data yet for ${data.base || '?'}/${data.quote || '?'} — fill in the Macro snapshot below first.</div>`;
     return;
   }
-  // Only metrics both currencies actually have a distinct value for reach
-  // this table at all (see fundamentals.py) -- every row here is a real,
-  // resolved comparison, never an unscored "context only" placeholder.
+  // Only resolved (both-sides-present) metrics reach this table -- never an unscored placeholder row.
   const rows = data.scored_rows;
   const trs = rows.length ? rows.map(r => `
     <tr>
@@ -506,7 +450,7 @@ function renderFundamentals(host, data) {
 }
 
 async function loadFundamentals() {
-  const compareCcy = document.getElementById('compareCcy').value;
+  const compareCcy = selectedCompareCcy;
   const errEl = document.getElementById('biasError');
   const resultEl = document.getElementById('fundamentalsResult');
   errEl.textContent = '';
@@ -517,8 +461,6 @@ async function loadFundamentals() {
   if (!r.ok) { errEl.textContent = data.error || 'Error'; resultEl.innerHTML = ''; return; }
   renderFundamentals(resultEl, data);
 }
-
-document.getElementById('compareCcy').addEventListener('change', loadFundamentals);
 
 // ---------- market news (own data, own styling -- see market_data.py) ----------
 
@@ -544,10 +486,7 @@ function renderNewsItems(host, items) {
   });
 }
 
-// The summary is the article's own og:description meta tag -- the same
-// blurb the publisher writes for link previews everywhere (iMessage, Slack,
-// Twitter all read this exact tag). Fetched lazily, only when a card is
-// actually opened, not for every headline in the list.
+// Summary comes from the article's own og:description tag, fetched lazily only when a card is opened.
 async function openNewsModal(item) {
   if (!item) return;
   document.getElementById('newsModalMeta').textContent = `${item.publisher}${item.time ? ' · ' + timeAgo(item.time) : ''}`;
@@ -569,11 +508,7 @@ document.getElementById('newsModalClose').addEventListener('click', () => newsMo
 newsModalBackdrop.addEventListener('click', (e) => { if (e.target === newsModalBackdrop) newsModalBackdrop.classList.add('hidden'); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !newsModalBackdrop.classList.contains('hidden')) newsModalBackdrop.classList.add('hidden'); });
 
-// News panel follows whichever currency is selected -- every currency gets
-// a genuinely relevant feed (see market_data.py's CURRENCY_NEWS_QUERIES):
-// EUR/GBP/AUD/NZD/JPY/CHF/CAD each have their own real Yahoo ticker, and
-// USD's feed aggregates every major pair since USD sits on one side of all
-// of them.
+// News feed follows the selected currency, using real per-currency Yahoo tickers except USD, which aggregates every major pair.
 async function loadCcyNews() {
   document.getElementById('ccyNewsTitle').textContent = selectedCcy;
   const host = document.getElementById('ccyNewsPanel');

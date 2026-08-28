@@ -84,9 +84,7 @@ def _fetch_one_quote(job):
 
 
 def _fetch_quotes():
-    # 10 independent requests -- same reasoning as fred_sync.sync(): these
-    # are network waits, so a small thread pool gets all 10 back in roughly
-    # the time of the single slowest one instead of the sum of all ten.
+    # Thread pool for the 10 independent quote requests -- same network-bound reasoning as fred_sync.sync().
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
         results = list(pool.map(_fetch_one_quote, SYMBOLS))
     by_symbol = {r["symbol"]: r for r in results}
@@ -104,10 +102,7 @@ def _fetch_one_news_query(q):
     try:
         return _get_json(
             "https://query1.finance.yahoo.com/v1/finance/search",
-            # Fetch more than we'll keep -- the 2-day age filter and the
-            # market-moving filter below both throw articles away, so a
-            # tight per-query count would leave a currency with hardly
-            # anything left on a quiet news day.
+            # Over-fetches deliberately, since the age/relevance filters below would leave almost nothing on a quiet news day.
             {"q": q, "newsCount": 20, "quotesCount": 0},
         )
     except Exception:
@@ -117,9 +112,7 @@ def _fetch_one_news_query(q):
 def _fetch_news_for_queries(queries, limit=20):
     seen = {}
     cutoff = time.time() - NEWS_MAX_AGE_SECONDS
-    # USD's query list runs to 7 (every major pair has USD on one side), so
-    # this is worth parallelizing the same way _fetch_quotes does -- these
-    # are independent network waits, not CPU work.
+    # Parallelized like _fetch_quotes since USD alone needs 7 independent queries.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(queries) or 1) as pool:
         results = list(pool.map(_fetch_one_news_query, queries))
     for data in results:
@@ -140,11 +133,7 @@ def _fetch_news_for_queries(queries, limit=20):
     return sorted(seen.values(), key=lambda x: x["time"], reverse=True)[:limit]
 
 
-# Cached per article uuid (Yahoo's own id, always unique -- unlike link,
-# which is occasionally blank and would otherwise collide multiple unrelated
-# articles onto the same cache entry). An article's importance doesn't
-# change once classified, so this never needs to expire, only grow
-# (negligible for a personal dashboard's news volume).
+# Cached by Yahoo's article uuid (not link, which can be blank/colliding); never expires since importance doesn't change once classified.
 _importance_cache = {}
 
 
@@ -194,15 +183,8 @@ def _filter_market_moving(items):
     return [it for it in items if _importance_cache.get(it["uuid"], True)]
 
 
-# Per-currency queries for the Bias Check news panel -- verified by hand.
-# Earlier attempts at USD-first pairs used the wrong Yahoo ticker
-# convention (USDJPY=X, USDCHF=X, USDCAD=X aren't real symbols, so Yahoo
-# silently fell back to generic "trending" junk) -- Yahoo's actual tickers
-# for these are just the counter-currency code (JPY=X, CHF=X, CAD=X), which
-# return genuinely relevant, currency-specific results. USD itself has no
-# single ticker, so its feed combines every major pair -- USD sits on one
-# side of all of them, so real per-currency news about any of the other
-# seven is also real USD news.
+# Uses Yahoo's real counter-currency tickers (not the USD-first convention that silently fell back to junk results);
+# USD's feed combines every major pair since it has no single ticker.
 CURRENCY_NEWS_QUERIES = {
     "EUR": ["EURUSD=X"],
     "GBP": ["GBPUSD=X"],
@@ -212,14 +194,7 @@ CURRENCY_NEWS_QUERIES = {
     "CHF": ["CHF=X"],
     "CAD": ["CAD=X"],
     "USD": ["EURUSD=X", "GBPUSD=X", "AUDUSD=X", "NZDUSD=X", "JPY=X", "CHF=X", "CAD=X"],
-    # Same tickers as SYMBOLS above -- XAU/NQ/ES aren't currencies, so none
-    # of the three go through the currency-pair fundamentals engine. Gold
-    # gets its own real-rate-proxy bias instead (see macros.html's
-    # computeGoldBias) since that's a real, if simplified, relationship;
-    # NQ/ES get news only -- equity indices don't react to macro data in
-    # the stable, one-directional way FX does, so a bias verdict here
-    # would look just as confident as the FX one while resting on much
-    # shakier ground.
+    # XAU/NQ/ES skip the FX fundamentals engine -- gold gets a real-rate-proxy bias instead, and equities get news only since they don't react to macro data as predictably as FX.
     "XAU": ["GC=F"],
     "NQ": ["^NDX"],
     "ES": ["^GSPC"],
@@ -240,12 +215,7 @@ _DESCRIPTION_PATTERNS = [
 
 
 def _fetch_article_summary(url):
-    # The og:description / meta-description tag is a short blurb the
-    # publisher writes specifically to be shown when the page is linked
-    # elsewhere (link previews on iMessage, Slack, Twitter, etc. all read
-    # the same tag) -- a legitimate, publisher-provided summary, not us
-    # scraping the article body/paragraphs, which would raise real
-    # copyright and ToS concerns across dozens of different publishers.
+    # Uses the publisher's own og:description meta tag, not scraped article text, to avoid copyright/ToS concerns.
     if not url.startswith("https://"):
         return None
     try:

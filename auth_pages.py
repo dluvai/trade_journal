@@ -15,7 +15,9 @@ before passing it to render().
 
 _STYLE = """
   html,body{margin:0;height:100%;color:#f5f4f2;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-    background:linear-gradient(135deg,#0c0c0e 0%,#0f2926 100%);background-attachment:fixed;}
+    background:radial-gradient(circle at 25% 12%, rgba(59,130,246,0.14), transparent 55%),
+      linear-gradient(135deg,#0c0c0e 0%,#0d1b2e 100%);
+    background-attachment:fixed,fixed;}
   .auth-shell{display:flex;min-height:100vh;}
   .auth-art{flex:1.7;position:relative;overflow:hidden;border-right:1px solid rgba(245,244,242,0.08);
     background-image:
@@ -93,6 +95,7 @@ _STYLE = """
   input,select{width:100%;background:rgba(245,244,242,0.06);border:1px solid rgba(245,244,242,0.14);border-radius:8px;color:#f5f4f2;
     padding:11px 13px;font-size:14.5px;box-sizing:border-box;margin-bottom:13px;}
   input:focus,select:focus{outline:none;border-color:#3b82f6;}
+  select option{background:#1c1b1f;color:#f5f4f2;}
   button{width:100%;background:linear-gradient(135deg,#93c5fd 0%,#3b82f6 55%,#1d4ed8 100%);
     border:none;border-radius:9px;color:#fff;font-weight:700;padding:12px;
     font-size:14.5px;cursor:pointer;transition:filter .15s ease,transform .15s ease;}

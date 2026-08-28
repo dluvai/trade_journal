@@ -284,9 +284,7 @@
     }
   });
 
-  // Account-form errors surface directly below the field they're about
-  // (same rule as the signup page), not as one generic banner -- accountStatus
-  // is reserved for the "Saved." confirmation and truly unattributable errors.
+  // Errors surface under their own field (like signup); accountStatus is reserved for the save confirmation and unattributable errors.
   const accountErrEls = {
     email: document.getElementById('err_account_email'),
     country: document.getElementById('err_account_country'),

@@ -78,17 +78,12 @@ def _load_dotenv():
 
 _load_dotenv()
 
-# Module level, not inside `if __name__ == "__main__"` -- gunicorn imports
-# this file directly on Render and never runs that block, so a backup
-# trigger placed there would only ever fire during local dev.
+# Runs at module level, not under __main__, since gunicorn never executes that block on Render.
 backup.backup_if_needed()
 auto_sync.start()
 
 app = Flask(__name__)
-# Templates are cached by default once debug=False -- Render restarts the
-# whole process on every deploy anyway (so it'd never matter there), but
-# without this a local dev edit to a .html template needs a server restart
-# to show up, same as a .py change would.
+# Enabled so local template edits show up without a restart; irrelevant in prod since Render restarts on every deploy anyway.
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
@@ -148,8 +143,7 @@ OPTIONAL_SIGNUP_FIELDS = ["country", "address_line1", "address_city", "address_p
 
 
 def _validate_profile_fields(fields):
-    # Shared by signup and the profile page's "edit account" form -- both
-    # only ever set these when non-empty, so empty stays valid (optional).
+    # Shared by signup and profile-edit; both only set these fields when non-empty, so blank stays valid.
     if fields.get("country") and fields["country"] not in countries.COUNTRY_CODES:
         return "Unknown country."
     if fields.get("phone") and not PHONE_RE.match(fields["phone"]):
@@ -180,11 +174,8 @@ def signup():
             error = _validate_profile_fields(fields)
 
         if not error:
-            # No email up front -- Resend can't deliver to arbitrary
-            # addresses until a sending domain is verified, so email is
-            # collected later from the Profile page instead of blocking
-            # signup on it. Straight to a logged-in session, no
-            # verify-email step (there's nothing to verify yet).
+            # No email at signup (Resend can't send until a domain is verified) and no verify-email
+            # step, since there's nothing to verify yet.
             user_id = db.create_user(
                 fields["username"], generate_password_hash(password),
                 fields["first_name"], fields["last_name"], None,
@@ -275,9 +266,7 @@ def forgot_password():
     if request.method == "POST":
         identifier = (request.form.get("identifier") or "").strip()
         user = db.get_user_by_username(identifier) or db.get_user_by_email(identifier)
-        # Always the same response whether or not an account was found --
-        # anything else would let this form be used to probe which
-        # usernames/emails exist.
+        # Same response regardless of whether the account exists, to prevent username/email enumeration.
         if user and user["email"]:
             code = auth.generate_code()
             db.set_reset_code(user["id"], auth.hash_code(code), auth.expiry_timestamp())
@@ -329,10 +318,7 @@ AVATAR_STORE_DIMENSION = (512, 512)
 
 
 def _current_user_or_none():
-    # session["user_id"] can outlive the account it points at (e.g. an
-    # admin deletes the row while the browser still has a valid signed
-    # session cookie) -- callers must handle None rather than assume the
-    # row still exists.
+    # session["user_id"] can outlive its account row (e.g. deleted mid-session), so callers must handle a None result.
     user = db.get_user_by_id(session["user_id"])
     if not user:
         session.clear()
@@ -450,9 +436,7 @@ def profile_avatar():
         img.thumbnail(AVATAR_MAX_DIMENSION, Image.LANCZOS)
     img.thumbnail(AVATAR_STORE_DIMENSION, Image.LANCZOS)
 
-    # Re-encode as JPEG rather than storing the raw upload -- strips EXIF and
-    # any non-image payload smuggled into the file, and normalizes format
-    # regardless of what was uploaded (PNG, WEBP, etc).
+    # Re-encodes to JPEG rather than storing the raw upload, stripping EXIF/smuggled payloads and normalizing format.
     if img.mode in ("RGBA", "LA", "P"):
         background = Image.new("RGB", img.size, (255, 255, 255))
         background.paste(img.convert("RGBA"), mask=img.convert("RGBA").split()[-1])
@@ -504,8 +488,7 @@ def profile_change_password():
 
     return render_template("change_password.html", active_page="profile", error=error, success=success)
 
-# Only these shared assets are servable as static files -- deliberately not the
-# whole folder, since that also holds trades.db and the source scripts.
+# Only these two files are servable -- not the whole folder, which also holds trades.db and source scripts.
 STATIC_ASSETS = {"dashboard-core.js", "dashboard-core.css"}
 
 REQUIRED_FIELDS = ["date"]
@@ -526,10 +509,7 @@ def clean_payload(body):
     return fields
 
 
-# Kept named `index`, still bound to `/` -- login() redirects to
-# url_for("index") on success, so renaming this would silently break that.
-# Public (see PUBLIC_ENDPOINTS): anonymous visitors get the marketing
-# landing page here instead of being bounced straight to /login.
+# Must stay named `index` since login() redirects here via url_for("index"); also public, showing the marketing page to anonymous visitors.
 @app.get("/")
 def index():
     if session.get("user_id"):
@@ -580,13 +560,21 @@ def strategy_page():
 def static_asset(filename):
     if filename not in STATIC_ASSETS:
         return jsonify({"error": "not found"}), 404
-    # 5 minutes, not longer -- these files change during active development
-    # and Render restarts the whole process on every deploy anyway, so
-    # there's no real cost to keeping this short. Still cuts every repeat
-    # page load's round-trip for these two files to zero within a session,
-    # instead of a conditional GET (send_from_directory's default) on every
-    # single load.
+    # 5-minute cache is cheap given Render's per-deploy restarts, and still avoids a conditional-GET round-trip on repeat loads.
     return send_from_directory(HERE, filename, max_age=300)
+
+
+@app.get("/api/bootstrap")
+def api_bootstrap():
+    # Every page needs 2-3 of {trades, accounts, strategies} at once (page init plus the shared
+    # Add/Edit Trade modal); one request doing 3 sequential Turso reads is faster in practice than
+    # several concurrent requests contending for the single shared connection (see db.get_conn()).
+    user_id = session["user_id"]
+    return jsonify({
+        "trades": db.list_trades(user_id),
+        "accounts": db.list_trading_accounts(user_id),
+        "strategies": db.list_strategies(user_id),
+    })
 
 
 @app.get("/api/trades")
@@ -876,12 +864,8 @@ if __name__ == "__main__":
         print("No users yet -- run 'python create_user.py <username>' to create your login.")
     else:
         print("Password protection is ON.")
-    # Local runs stay on 127.0.0.1 (loopback only) unless HOST is set explicitly.
-    # A real deployment (Render, etc.) runs this via gunicorn instead, not this block.
+    # Defaults to loopback-only locally; real deployments run via gunicorn instead of this block.
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", 5151))
-    # threaded=True so one slow request (an external market-data/news call,
-    # a Turso round-trip) doesn't block every other request behind it --
-    # confirmed by hand that a single-threaded dev server made even static
-    # CSS/JS take 1-2s to load while a ticker poll was in flight.
+    # threaded=True so a slow external call doesn't block other requests -- confirmed single-threaded mode stalled static asset loads during a ticker poll.
     app.run(host=host, port=port, debug=False, threaded=True)

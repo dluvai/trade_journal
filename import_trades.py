@@ -12,9 +12,7 @@ from datetime import date, datetime
 
 import openpyxl
 
-# (field, label) pairs -- the single source of truth the frontend mapping
-# UI also reads, so "result" is never even selectable: result is always
-# server-derived from rr (see db.derive_result), never trusted from a file.
+# Single source of truth for the mapping UI; "result" is deliberately absent since it's always server-derived from rr.
 TARGET_FIELDS = [
     ("date", "Date"), ("session", "Session"), ("pair", "Pair"), ("direction", "Direction"),
     ("risk", "Risk %"), ("rr", "RR"), ("pnl", "PnL %"), ("notes", "Notes"),
@@ -59,10 +57,7 @@ def suggest_mapping(header_row):
 
 
 def looks_like_header(first_row, second_row):
-    # Heuristic: if the first row is mostly non-numeric text and the second
-    # row has at least one cell that parses as a number or date, the first
-    # row is probably a header. Soft signal only -- the user can always
-    # override the checkbox.
+    # Heuristic-only header guess (non-numeric row 1, numeric/date row 2) -- the user can always override it.
     if not second_row:
         return True
 
@@ -125,9 +120,7 @@ def parse_full_xlsx(file_bytes):
 
 
 def parse_date_flexible(raw):
-    # openpyxl returns genuine date-typed Excel cells as datetime/date
-    # objects, not strings -- a real XLSX date column hits this path on
-    # every row, so it has to be checked before the string-format attempts.
+    # Checked before string-format parsing since openpyxl returns real date cells as datetime objects, not strings.
     if isinstance(raw, datetime):
         return raw.date().isoformat()
     if isinstance(raw, date):
@@ -146,8 +139,7 @@ def normalize_direction(raw):
 
 
 def row_to_trade_fields(row, mapping, risk_pnl_is_percent):
-    # mapping: {column_index_str: target_field}. Never accepts "result" --
-    # TARGET_FIELDS simply has no such entry, so it can't be mapped to.
+    # "result" can never be mapped since TARGET_FIELDS has no such entry.
     raw = {}
     for idx_str, field in mapping.items():
         if field == "ignore" or field not in TARGET_FIELD_KEYS:
@@ -178,8 +170,7 @@ def row_to_trade_fields(row, mapping, risk_pnl_is_percent):
         if numeric_key not in raw or str(raw[numeric_key]).strip() == "":
             continue
         val = float(str(raw[numeric_key]).strip().rstrip("%"))
-        # rr is not percent-scaled (it's a plain multiple, e.g. 2.0 = 2R) --
-        # only risk/pnl follow the app's own fraction-vs-percent convention.
+        # rr is a plain multiple, not percent-scaled like risk/pnl.
         if numeric_key in ("risk", "pnl") and risk_pnl_is_percent:
             val = val / 100
         fields[numeric_key] = val

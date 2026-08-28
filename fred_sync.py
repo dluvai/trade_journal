@@ -42,12 +42,10 @@ import db
 
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
 
-# metric -> (FRED series id, mode)
-#   'level' = use the latest value as-is (already the right unit, e.g. a rate or a %)
-#   'yoy'   = the series is an index/level; compute % change vs ~1 year earlier
+# Maps metric to (series id, mode): 'level' = use as-is, 'yoy' = compute % change vs ~1 year ago.
 SERIES = {
     "USD": {
-        "interest_rate": ("DFEDTARU", "level"),            # FOMC target range upper bound -- the headline "Fed rate" figure markets quote, not the effective/traded rate (FEDFUNDS), which sits inside the range and reads as a different, lower number
+        "interest_rate": ("DFEDTARU", "level"),            # The headline "Fed rate" markets quote -- not FEDFUNDS, the effective/traded rate, which reads lower
         "gdp_yoy":       ("GDPC1", "yoy"),                 # Real GDP, quarterly
         "unemployment":  ("UNRATE", "level"),
         "cpi_yoy":       ("CPIAUCSL", "yoy"),               # CPI index, monthly
@@ -132,10 +130,7 @@ PROXY_NOTES = {
 
 def _fetch_series(series_id):
     url = FRED_CSV.format(series_id=series_id)
-    # FRED's edge silently stalls requests carrying a generic browser-style
-    # User-Agent (confirmed by hand: identical request with "curl/8.0" returns
-    # instantly, "Mozilla/5.0" hangs until the socket times out) -- so we ask
-    # honestly as what we are rather than spoofing a browser.
+    # Uses a curl-style User-Agent since FRED silently stalls requests with a browser-style one (confirmed by hand).
     req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         text = resp.read().decode("utf-8")
@@ -179,10 +174,7 @@ def _mom(rows):
 
 
 def _mom_diff(rows):
-    # For a level series like nonfarm payrolls, the conventional "change"
-    # figure is the raw difference (e.g. "+150K jobs"), not a percentage --
-    # a % change on a number already in the hundred-millions is meaningless
-    # to read at a glance.
+    # Level series report raw difference (e.g. "+150K jobs"), not %, since a percentage on a huge base number is unreadable.
     if len(rows) < 2:
         return (rows[-1][0], None) if rows else (None, None)
     latest_date, latest_value = rows[-1]
@@ -191,13 +183,7 @@ def _mom_diff(rows):
 
 
 def _qoq_compounded_to_yoy(rows):
-    # NZ and CH's GDP mirrors on FRED are already quarter-over-quarter growth
-    # rates (confirmed by hand: values oscillate roughly -2..+4, including
-    # negatives -- an index/level series never does that), not an index like
-    # GDPC1/GDPRSAXDC*, so there's nothing to take a ratio of. Compounding
-    # the last 4 quarters gives a genuine annual growth figure that's
-    # comparable to every other currency's YoY GDP number instead of mixing
-    # QoQ and YoY across the currency switcher.
+    # NZ/CH's FRED GDP series are already QoQ growth rates, so the last 4 quarters are compounded into a YoY figure comparable to other currencies.
     if len(rows) < 4:
         return (rows[-1][0], None) if rows else (None, None)
     latest_date = rows[-1][0]
@@ -248,16 +234,7 @@ def sync(currencies=None, dry_run=False):
 
     jobs = [(ccy, metric, spec) for ccy in currencies for metric, spec in SERIES.get(ccy, {}).items()]
 
-    # ~30-40 independent FRED requests across every currency -- these are
-    # pure network waits, not CPU work, so a thread pool genuinely
-    # parallelizes them despite the GIL (urllib releases it while blocked on
-    # the socket). Measured by hand: capping this at max_workers=10 still
-    # took ~21s, because once 10 are in flight the 11th has to wait for a
-    # slot to free rather than starting immediately -- a couple of slow
-    # FRED responses in the first batch delay every batch behind them. One
-    # worker per job removes that queueing entirely: total time drops to
-    # ~6s, bounded by the single slowest request instead of by batches of
-    # stragglers compounding.
+    # One worker per job (not a capped pool) since capping at 10 still measured ~21s due to queueing -- uncapped drops it to ~6s.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs) or 1) as pool:
         results = list(pool.map(_fetch_one, jobs))
 

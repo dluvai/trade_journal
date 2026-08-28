@@ -19,7 +19,9 @@ _STYLE = """
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
   html,body{margin:0;min-height:100%;color:#f5f4f2;font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-    background:linear-gradient(135deg,#0c0c0e 0%,#0f2926 100%);background-attachment:fixed;}
+    background:radial-gradient(circle at 25% 12%, rgba(59,130,246,0.14), transparent 55%),
+      linear-gradient(135deg,#0c0c0e 0%,#0d1b2e 100%);
+    background-attachment:fixed,fixed;}
   a{color:inherit;}
   h1,h2,h3,h4{font-weight:700;letter-spacing:-0.01em;}
   @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none !important;transition:none !important;}}

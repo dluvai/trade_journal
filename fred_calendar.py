@@ -54,9 +54,7 @@ METRIC_RELEASE_IDS = {
     "gdp_yoy": 53,
 }
 
-# One label per release_id, not per metric -- cpi_yoy/cpi_mom/core_cpi_yoy
-# all share release_id 10 (they're the same CPI report), so a calendar
-# grouped by release_id shows it once instead of three duplicate rows.
+# One label per release_id (not per metric) so shared reports like CPI don't show as duplicate rows.
 RELEASE_LABELS = {
     10: "CPI report",
     46: "Core PPI",
@@ -85,14 +83,7 @@ def _fetch_release_dates(release_id, api_key, limit=1):
     return [d["date"] for d in data.get("release_dates", [])]
 
 
-# Cached per release_id, not per merged result -- a merged-list-level cache
-# means one flaky release_id (a single transient timeout) drags every OTHER
-# release_id's already-fetched dates down with it for the full TTL, since
-# they're all baked into one cached blob together. Caching each release_id
-# independently means a failure only affects that one release: it falls
-# back to serving its own last-known-good dates (still correct, just
-# possibly a few hours stale) instead of vanishing from the calendar
-# entirely.
+# Cached per release_id, not per merged result, so one flaky release only affects itself instead of dragging down every other one's cache.
 _release_cache = {}
 _RELEASE_TTL_SECONDS = 6 * 3600
 
@@ -125,10 +116,7 @@ def next_release_dates():
     if not api_key:
         return {}
 
-    # One HTTP round-trip per unique release_id (up to the 10s timeout each)
-    # -- fetched in parallel rather than sequentially, since a cold cache
-    # (a fresh process, or the first Macros-tab visit in 6 hours) otherwise
-    # means the page waits on up to 8 requests back to back.
+    # Fetched in parallel since a cold cache would otherwise mean waiting on up to 8 sequential requests.
     unique_ids = sorted(set(METRIC_RELEASE_IDS.values()))
     with ThreadPoolExecutor(max_workers=len(unique_ids)) as pool:
         fetched = dict(zip(unique_ids, pool.map(lambda rid: _get_release_dates(rid, api_key, limit=1), unique_ids)))

@@ -62,9 +62,7 @@ _COUNTRY_NAMES = dict(COUNTRIES)
 
 
 def flag_emoji(code):
-    # Each letter A-Z maps to a Unicode "regional indicator symbol"; two of
-    # them side by side render as that country's flag natively in every
-    # modern OS/browser -- no image assets needed.
+    # Builds flags from paired Unicode regional-indicator symbols, so no image assets are needed.
     if not code or len(code) != 2 or not code.isalpha():
         return ""
     return "".join(chr(0x1F1E6 + ord(c.upper()) - ord("A")) for c in code)

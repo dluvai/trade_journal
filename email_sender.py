@@ -14,9 +14,7 @@ RESEND_API_URL = "https://api.resend.com/emails"
 
 
 def send_email(to, subject, html_body):
-    # Read lazily, not as a module-level constant -- server.py imports this
-    # module before it calls its own _load_dotenv(), so a module-level read
-    # would always see it unset locally.
+    # Read lazily, not as a module constant, since server.py imports this module before loading its .env.
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         print("RESEND_API_KEY not set -- cannot send email")
@@ -32,10 +30,7 @@ def send_email(to, subject, html_body):
     req = urllib.request.Request(
         RESEND_API_URL,
         data=payload,
-        # Resend's API sits behind Cloudflare, which silently 403s
-        # (error 1010) requests carrying Python's default User-Agent --
-        # same class of bot-fingerprint block fred_sync.py already works
-        # around for FRED's API, same fix.
+        # Custom User-Agent needed since Cloudflare silently 403s Python's default one -- same fix already used for FRED in fred_sync.py.
         headers={
             "Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
             "User-Agent": "curl/8.0",

@@ -40,11 +40,7 @@ CHECK_INTERVAL_SECONDS = 60
 POLL_WINDOW_MINUTES = 45
 FULL_SYNC_INTERVAL_SECONDS = 60 * 60
 
-# event_key -> True once resolved (data changed, window expired, or a poll
-# thread has already been started for it) -- in-memory only, so a server
-# restart re-evaluates every event currently in the calendar window, which
-# is exactly what we want (e.g. it's what catches an already-released
-# metric right after a deploy).
+# In-memory only, so a restart re-evaluates every event in the window -- intentional, so it catches events released right before a deploy.
 _handled = {}
 
 

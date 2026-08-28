@@ -40,9 +40,7 @@ def _latest(series_id):
 
 
 def snapshot():
-    # These series update quarterly/annually at most -- cache for a few
-    # hours so an open dashboard tab doesn't refetch 5 FRED series on every
-    # macro-tab visit.
+    # Cached for hours since these series update at most quarterly, avoiding a refetch on every macro-tab visit.
     hit = _cache.get("snapshot")
     if hit and time.time() - hit[0] < 6 * 3600:
         return hit[1]
@@ -86,8 +84,7 @@ def _compute_snapshot():
     result["projected_next_year_pct"] = round(
         debt_gdp + borrowing_pct + debt_gdp * (rate - nominal_growth) / 100, 2
     )
-    # Each stabilizer solves "0 = borrowing + debt_gdp*(r-g)/100" for one
-    # variable, holding the other two (and current debt_gdp) fixed.
+    # Each stabilizer solves the debt-dynamics identity for one variable, holding the others fixed.
     stabilizers = {
         "growth_needed": round(rate + borrowing_pct * 100 / debt_gdp, 2),
         "deficit_allowance": round(debt_gdp * (nominal_growth - rate) / 100, 2),

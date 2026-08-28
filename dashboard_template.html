@@ -100,9 +100,7 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
 
 DC.setupTabs();
 render();
-// Note: the live ticker and market news panels only exist in live_dashboard.html
-// (server.py) since they need a backend to proxy the price/news requests through --
-// this static export has no server behind it to call.
+// Ticker/news panels are omitted here since this is a static export with no backend to proxy those requests.
 </script>
 </body>
 </html>

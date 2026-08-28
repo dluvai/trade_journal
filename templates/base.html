@@ -78,15 +78,13 @@
       <div class="form-grid">
         <div class="field"><label>Date</label><input type="date" name="date" required></div>
         <div class="field"><label>Session</label>
-          <select name="session">
-            <option value="London">London</option>
-            <option value="New York">New York</option>
-            <option value="Asia">Asia</option>
-          </select>
+          <input type="hidden" name="session" value="London">
+          <div id="tradeSessionSelect"></div>
         </div>
         <div class="field"><label>Pair</label><input type="text" name="pair" placeholder="EURUSD" required></div>
         <div class="field"><label>Direction</label>
-          <select name="direction"><option value="Long">Long</option><option value="Short">Short</option></select>
+          <input type="hidden" name="direction" value="Long">
+          <div id="tradeDirectionSelect"></div>
         </div>
       </div>
       <div class="form-grid thirds">
@@ -97,14 +95,12 @@
       <div class="empty" style="text-align:left; padding:0 0 12px; font-size:11.5px;">Result (WIN/LOSS/BE) is set automatically from RR: below 0 is a loss, 0 to 1 is breakeven, above 1 is a win.</div>
       <div class="form-grid halves">
         <div class="field"><label>Strategy</label>
-          <select name="strategy_id" id="tradeStrategySelect">
-            <option value="">No strategy</option>
-          </select>
+          <input type="hidden" name="strategy_id" value="">
+          <div id="tradeStrategySelect"></div>
         </div>
         <div class="field"><label>Account</label>
-          <select name="account_id" id="tradeAccountSelect">
-            <option value="">Unassigned</option>
-          </select>
+          <input type="hidden" name="account_id" value="">
+          <div id="tradeAccountSelect"></div>
         </div>
       </div>
       <div class="field" style="margin-bottom:12px;">
