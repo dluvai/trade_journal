@@ -562,6 +562,15 @@ def list_weekly_reviews(user_id):
     return [r.asdict() for r in rows]
 
 
+def get_weekly_review(user_id, week_start):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM weekly_reviews WHERE user_id=? AND week_start=? ORDER BY created_at DESC LIMIT 1",
+        (user_id, week_start),
+    ).rows
+    return rows[0].asdict() if rows else None
+
+
 # ---------- users ----------
 
 # Only these fields are browser-safe -- password_hash and every reset/verification column must never reach a template or jsonify().

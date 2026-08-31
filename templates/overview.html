@@ -14,7 +14,14 @@
 <div class="panel">
   <div class="workspace-head">
     <h2>Weekly Review</h2>
-    <button class="btn-primary" id="generateReviewBtn" style="width:auto; padding:8px 16px;">Generate this week's review</button>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="iconbtn small" id="prevWeekBtn" title="Previous week">‹</button>
+        <span id="weekRangeLabel" style="font-size:12.5px; color:var(--text-muted); min-width:110px; text-align:center;"></span>
+        <button class="iconbtn small" id="nextWeekBtn" title="Next week">›</button>
+      </div>
+      <button class="btn-primary" id="generateReviewBtn" style="width:auto; padding:8px 16px;">Generate this week's review</button>
+    </div>
   </div>
   <div id="weeklyReviewError" style="color:var(--critical); font-size:12px; margin-bottom:8px;"></div>
   <div id="weeklyReviewList"></div>
@@ -105,26 +112,76 @@ function render() {
 
 // AI weekly review: on-demand only (no scheduler) -- generating one calls Claude and costs a
 // real API call, so it only ever happens when the button is clicked, never automatically.
+// A week is picked with the prev/next arrows (defaulting to the current week); the server
+// caches one review per week_start, so re-visiting an already-reviewed week is free.
 function formatReviewContent(content) {
   const stripped = content.replace(/^#+\s*.*\n+/, '');
   const escaped = stripped.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return escaped.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
 }
 
-function renderWeeklyReviews(reviews) {
+function mondayIso(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDaysIso(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function formatWeekRange(weekStart) {
+  const opts = { month: 'short', day: 'numeric' };
+  const start = new Date(weekStart + 'T00:00:00');
+  const end = new Date(addDaysIso(weekStart, 6) + 'T00:00:00');
+  return `${start.toLocaleDateString(undefined, opts)} – ${end.toLocaleDateString(undefined, opts)}`;
+}
+
+let selectedWeekStart = mondayIso(DC.localTodayStr());
+let WEEKLY_REVIEWS = [];
+
+function renderWeeklyReviewPanel() {
+  const currentWeekStart = mondayIso(DC.localTodayStr());
+  const isCurrentWeek = selectedWeekStart === currentWeekStart;
+  document.getElementById('weekRangeLabel').textContent = isCurrentWeek ? 'This week' : formatWeekRange(selectedWeekStart);
+  document.getElementById('nextWeekBtn').disabled = selectedWeekStart >= currentWeekStart;
+
+  const existing = WEEKLY_REVIEWS.find(r => r.week_start === selectedWeekStart);
+  const btn = document.getElementById('generateReviewBtn');
   const host = document.getElementById('weeklyReviewList');
-  if (!reviews.length) { host.innerHTML = '<div class="empty">No reviews generated yet.</div>'; return; }
-  host.innerHTML = reviews.map(r => `
-    <div style="border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:10px; background:var(--surface-2);">
-      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">${r.week_start} to ${r.week_end}</div>
-      <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.7;">${formatReviewContent(r.content)}</div>
-    </div>`).join('');
+
+  if (existing) {
+    btn.style.display = 'none';
+    host.innerHTML = `
+      <div style="border:1px solid var(--border); border-radius:10px; padding:14px 16px; background:var(--surface-2);">
+        <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.7;">${formatReviewContent(existing.content)}</div>
+      </div>`;
+  } else {
+    btn.style.display = '';
+    btn.textContent = isCurrentWeek ? "Generate this week's review" : 'Generate review for this week';
+    host.innerHTML = '<div class="empty">No review generated for this week yet.</div>';
+  }
 }
 
 async function loadWeeklyReviews() {
-  const reviews = await (await fetch('/api/weekly-review')).json();
-  renderWeeklyReviews(reviews);
+  WEEKLY_REVIEWS = await (await fetch('/api/weekly-review')).json();
+  renderWeeklyReviewPanel();
 }
+
+document.getElementById('prevWeekBtn').addEventListener('click', () => {
+  selectedWeekStart = addDaysIso(selectedWeekStart, -7);
+  document.getElementById('weeklyReviewError').textContent = '';
+  renderWeeklyReviewPanel();
+});
+
+document.getElementById('nextWeekBtn').addEventListener('click', () => {
+  const currentWeekStart = mondayIso(DC.localTodayStr());
+  if (selectedWeekStart >= currentWeekStart) return;
+  selectedWeekStart = addDaysIso(selectedWeekStart, 7);
+  document.getElementById('weeklyReviewError').textContent = '';
+  renderWeeklyReviewPanel();
+});
 
 document.getElementById('generateReviewBtn').addEventListener('click', async () => {
   const btn = document.getElementById('generateReviewBtn');
@@ -133,13 +190,13 @@ document.getElementById('generateReviewBtn').addEventListener('click', async () 
   btn.disabled = true;
   btn.textContent = 'Generating…';
   try {
-    await DC.apiSend('POST', '/api/weekly-review', {});
+    await DC.apiSend('POST', '/api/weekly-review', { week_start: selectedWeekStart });
     await loadWeeklyReviews();
   } catch (e) {
     errEl.textContent = e.message;
   } finally {
     btn.disabled = false;
-    btn.textContent = "Generate this week's review";
+    renderWeeklyReviewPanel();
   }
 });
 </script>

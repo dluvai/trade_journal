@@ -894,9 +894,28 @@ def api_analyze():
 def api_generate_weekly_review():
     user_id = session["user_id"]
     today = date.today()
-    week_start = today - timedelta(days=today.weekday())  # Monday of the current week
+    current_week_start = today - timedelta(days=today.weekday())  # Monday of the current week
+
+    body = request.get_json(silent=True) or {}
+    requested_start = body.get("week_start")
+    if requested_start:
+        try:
+            week_start = date.fromisoformat(requested_start)
+        except ValueError:
+            return jsonify({"error": "Invalid week_start date."}), 400
+        week_start -= timedelta(days=week_start.weekday())  # normalize to that week's Monday
+        if week_start > current_week_start:
+            return jsonify({"error": "Can't generate a review for a future week."}), 400
+    else:
+        week_start = current_week_start
+
     week_end = week_start + timedelta(days=6)
     week_start_iso, week_end_iso = week_start.isoformat(), week_end.isoformat()
+
+    existing = db.get_weekly_review(user_id, week_start_iso)
+    if existing:
+        return jsonify({"ok": True, "content": existing["content"], "week_start": week_start_iso, "week_end": week_end_iso})
+
     trades = [t for t in db.list_trades(user_id) if week_start_iso <= t["date"] <= week_end_iso]
     try:
         content = ai_weekly_review.generate_weekly_review(trades, week_start_iso, week_end_iso)
