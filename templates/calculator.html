@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Calculator — SteadFast{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h2>Position Size Calculator</h2>
+  <div class="form-grid thirds">
+    <div class="field"><label>Pair</label><div id="calcPairSelect"></div></div>
+    <div class="field"><label>Account Balance</label><input type="number" id="calcBalance" step="0.01" min="0"></div>
+    <div class="field"><label>Risk %</label><input type="number" id="calcRisk" step="0.01" min="0" value="1"></div>
+  </div>
+  <div class="form-grid thirds">
+    <div class="field"><label>Stop Distance (pips)</label><input type="number" id="calcStop" step="0.01" min="0"></div>
+    <div class="field" id="calcRateField" style="display:none;"><label id="calcRateLabel">Current price</label><input type="number" id="calcRate" step="0.00001" min="0"></div>
+    <div class="field" id="calcConvField" style="display:none;"><label id="calcConvLabel">Conversion pair price</label><input type="number" id="calcConv" step="0.00001" min="0"></div>
+  </div>
+  <div id="calcResult" style="font-size:14px; color:var(--text-secondary); min-height:24px; padding-top:4px;"></div>
+  <div class="empty" style="text-align:left; padding:8px 0 0; font-size:11px;">Assumes a standard lot (100,000 units for FX, 100oz for gold) — real broker contract sizes and pip conventions can vary slightly, so treat this as a sizing guide rather than a guaranteed exact figure.</div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+// Pip value math, not a guess: each pair needs a different conversion depending on which
+// currency is USD and which side of the quote it's on.
+//   usd_quote  (EURUSD, GBPUSD, ...): pip value per lot is fixed in USD, no extra input needed.
+//   usd_base   (USDJPY, USDCHF, ...): pip value depends on that pair's own current price.
+//   cross      (EURGBP, EURJPY, ...): pip value is fixed in the QUOTE currency, then needs
+//              converting to USD via a second, correlated pair's price (e.g. GBPUSD for EURGBP).
+//   gold       (XAUUSD): already USD-denominated, fixed pip value per 100oz contract.
+const PAIR_SPECS = {
+  EURUSD: { label: 'EUR/USD', pipSize: 0.0001, kind: 'usd_quote' },
+  GBPUSD: { label: 'GBP/USD', pipSize: 0.0001, kind: 'usd_quote' },
+  AUDUSD: { label: 'AUD/USD', pipSize: 0.0001, kind: 'usd_quote' },
+  NZDUSD: { label: 'NZD/USD', pipSize: 0.0001, kind: 'usd_quote' },
+  USDJPY: { label: 'USD/JPY', pipSize: 0.01,   kind: 'usd_base' },
+  USDCHF: { label: 'USD/CHF', pipSize: 0.0001, kind: 'usd_base' },
+  USDCAD: { label: 'USD/CAD', pipSize: 0.0001, kind: 'usd_base' },
+  EURGBP: { label: 'EUR/GBP', pipSize: 0.0001, kind: 'cross', convPair: 'GBPUSD', convInverse: false },
+  EURJPY: { label: 'EUR/JPY', pipSize: 0.01,   kind: 'cross', convPair: 'USDJPY', convInverse: true },
+  GBPJPY: { label: 'GBP/JPY', pipSize: 0.01,   kind: 'cross', convPair: 'USDJPY', convInverse: true },
+  XAUUSD: { label: 'Gold (XAU/USD)', pipSize: 0.01, kind: 'gold', contractSize: 100 },
+};
+const LOT_SIZE = 100000;
+let calcPair = 'EURUSD';
+
+function updateCalcFieldVisibility() {
+  const spec = PAIR_SPECS[calcPair];
+  const rateField = document.getElementById('calcRateField');
+  const convField = document.getElementById('calcConvField');
+  rateField.style.display = spec.kind === 'usd_base' ? '' : 'none';
+  if (spec.kind === 'usd_base') document.getElementById('calcRateLabel').textContent = `Current price of ${spec.label}`;
+  convField.style.display = spec.kind === 'cross' ? '' : 'none';
+  if (spec.kind === 'cross') document.getElementById('calcConvLabel').textContent = `Current price of ${PAIR_SPECS[spec.convPair].label}`;
+}
+
+function updatePositionCalc() {
+  const spec = PAIR_SPECS[calcPair];
+  const balance = parseFloat(document.getElementById('calcBalance').value);
+  const risk = parseFloat(document.getElementById('calcRisk').value);
+  const stop = parseFloat(document.getElementById('calcStop').value);
+  const rate = parseFloat(document.getElementById('calcRate').value);
+  const conv = parseFloat(document.getElementById('calcConv').value);
+  const result = document.getElementById('calcResult');
+
+  if (!(balance > 0) || !(risk > 0) || !(stop > 0)) { result.innerHTML = ''; return; }
+  if (spec.kind === 'usd_base' && !(rate > 0)) { result.innerHTML = ''; return; }
+  if (spec.kind === 'cross' && !(conv > 0)) { result.innerHTML = ''; return; }
+
+  let pipValuePerLot;
+  if (spec.kind === 'usd_quote') pipValuePerLot = spec.pipSize * LOT_SIZE;
+  else if (spec.kind === 'usd_base') pipValuePerLot = (spec.pipSize * LOT_SIZE) / rate;
+  else if (spec.kind === 'gold') pipValuePerLot = spec.pipSize * spec.contractSize;
+  else pipValuePerLot = spec.convInverse ? (spec.pipSize * LOT_SIZE) / conv : spec.pipSize * LOT_SIZE * conv;
+
+  const riskAmount = balance * (risk / 100);
+  const lots = riskAmount / (pipValuePerLot * stop);
+  const units = lots * (spec.kind === 'gold' ? spec.contractSize : LOT_SIZE);
+
+  result.innerHTML = `Risk amount: <b style="color:var(--text-primary);">$${riskAmount.toFixed(2)}</b>
+    &middot; Pip value/lot: <b style="color:var(--text-primary);">$${pipValuePerLot.toFixed(2)}</b>
+    &middot; Position size: <b style="color:var(--text-primary);">${lots.toFixed(2)} lots</b> (~${Math.round(units).toLocaleString()} ${spec.kind === 'gold' ? 'oz' : 'units'})`;
+}
+
+DC.renderSimpleSelect('calcPairSelect', Object.keys(PAIR_SPECS).map(k => ({ value: k, label: PAIR_SPECS[k].label })), calcPair, (v) => {
+  calcPair = v;
+  updateCalcFieldVisibility();
+  updatePositionCalc();
+});
+updateCalcFieldVisibility();
+['calcBalance', 'calcRisk', 'calcStop', 'calcRate', 'calcConv'].forEach(id => document.getElementById(id).addEventListener('input', updatePositionCalc));
+</script>
+{% endblock %}

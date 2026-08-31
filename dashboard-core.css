@@ -448,7 +448,11 @@ td.icon-cell { text-align: center; }
 }
 
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-1-glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3); }
+/* Sticky headers need a near-opaque backdrop, not the paper-thin --surface-1-glass wash --
+   that's fine floating over the whole page, but here rows scroll directly behind the header
+   (sometimes just one row-height away), so a thin tint plus blur smears the scrolled text right
+   through it instead of hiding it. Same heavier recipe as .mini-select-popover, for the same reason. */
+th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(15,14,17,0.96); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4); }
 th.num { text-align: right; }
 td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: middle; }
 tr.trade-row { cursor: pointer; }

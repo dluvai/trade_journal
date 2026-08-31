@@ -43,6 +43,12 @@ SCHEMA_STATEMENTS = [
         notes TEXT,
         updated_at TEXT
     )""",
+    """CREATE TABLE IF NOT EXISTS macro_bias_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        currency TEXT NOT NULL,
+        bias TEXT NOT NULL,
+        set_at TEXT NOT NULL
+    )""",
     """CREATE TABLE IF NOT EXISTS strategies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -86,6 +92,14 @@ SCHEMA_STATEMENTS = [
     # "Felix" both be registered as separate accounts -- this index enforces true case-insensitive
     # uniqueness at the database level, closing the race condition an app-level check alone can't.
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)",
+    """CREATE TABLE IF NOT EXISTS weekly_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        week_start TEXT NOT NULL,
+        week_end TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )""",
 ]
 
 MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
@@ -127,6 +141,13 @@ def _migrate_trades_account_column(conn):
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)").rows}
     if "account_id" not in existing:
         conn.execute("ALTER TABLE trades ADD COLUMN account_id INTEGER")
+
+
+def _migrate_trades_entered_time_column(conn):
+    # Optional "HH:MM" clock time -- nullable since it's new and historical trades can never have it retroactively.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(trades)").rows}
+    if "entered_time" not in existing:
+        conn.execute("ALTER TABLE trades ADD COLUMN entered_time TEXT")
 
 
 def _migrate_user_id_columns(conn):
@@ -202,6 +223,7 @@ def _ensure_schema(conn):
     _migrate_macro_prev_columns(conn)
     _migrate_trades_strategy_column(conn)
     _migrate_trades_account_column(conn)
+    _migrate_trades_entered_time_column(conn)
     _migrate_user_id_columns(conn)
     _migrate_user_profile_columns(conn)
     _migrate_user_extended_profile_columns(conn)
@@ -304,14 +326,15 @@ def insert_trade(user_id, fields):
     conn = get_conn()
     rs = conn.execute(
         """INSERT INTO trades (date, session, pair, direction, risk, rr, pnl, result, notes,
-                                chart_daily, chart_4h, chart_30m, strategy_id, account_id, user_id, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                chart_daily, chart_4h, chart_30m, strategy_id, account_id, entered_time, user_id, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), _account_id_or_none(fields), user_id, now, now,
+            _strategy_id_or_none(fields), _account_id_or_none(fields), fields.get("entered_time") or None,
+            user_id, now, now,
         ),
     )
     new_id = rs.last_insert_rowid
@@ -325,14 +348,15 @@ def update_trade(user_id, trade_id, fields):
     conn = get_conn()
     conn.execute(
         """UPDATE trades SET date=?, session=?, pair=?, direction=?, risk=?, rr=?, pnl=?, result=?,
-               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, strategy_id=?, account_id=?, updated_at=?
+               notes=?, chart_daily=?, chart_4h=?, chart_30m=?, strategy_id=?, account_id=?, entered_time=?, updated_at=?
            WHERE id=? AND user_id=?""",
         (
             fields["date"], fields.get("session"), fields.get("pair"), fields.get("direction"),
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), _account_id_or_none(fields), now, trade_id, user_id,
+            _strategy_id_or_none(fields), _account_id_or_none(fields), fields.get("entered_time") or None,
+            now, trade_id, user_id,
         ),
     )
 
@@ -474,6 +498,15 @@ def upsert_macro(currency, fields):
     existing_rows = conn.execute("SELECT * FROM macro WHERE currency=?", (currency,)).rows
     existing = existing_rows[0].asdict() if existing_rows else {}
 
+    # Append-only history, kept separate from the `macro` row itself (which only ever holds the
+    # current value) -- this is the only place a bias call becomes scoreable against trades later.
+    new_bias = fields.get("bias")
+    if new_bias and new_bias != existing.get("bias"):
+        conn.execute(
+            "INSERT INTO macro_bias_history (currency, bias, set_at) VALUES (?, ?, ?)",
+            (currency, new_bias, now),
+        )
+
     # Keeps one step of history per metric so the UI can show a real latest-vs-prev comparison.
     new_values, prev_values = {}, {}
     for key in MACRO_METRIC_KEYS:
@@ -499,6 +532,34 @@ def upsert_macro(currency, fields):
         f"ON CONFLICT(currency) DO UPDATE SET {update_clause}",
         values,
     )
+
+
+def list_bias_history():
+    # All currencies at once, ordered oldest-first -- the frontend does its own "most recent
+    # call as of this trade's date" lookup per currency, so there's no need for a currency filter here.
+    conn = get_conn()
+    rows = conn.execute("SELECT currency, bias, set_at FROM macro_bias_history ORDER BY set_at ASC").rows
+    return [r.asdict() for r in rows]
+
+
+# ---------- AI weekly review ----------
+
+def create_weekly_review(user_id, week_start, week_end, content):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_conn()
+    rs = conn.execute(
+        "INSERT INTO weekly_reviews (user_id, week_start, week_end, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, week_start, week_end, content, now),
+    )
+    return rs.last_insert_rowid
+
+
+def list_weekly_reviews(user_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM weekly_reviews WHERE user_id=? ORDER BY created_at DESC", (user_id,)
+    ).rows
+    return [r.asdict() for r in rows]
 
 
 # ---------- users ----------

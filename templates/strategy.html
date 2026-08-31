@@ -50,7 +50,13 @@ function renderStrategiesList(list) {
   const host = document.getElementById('strategiesList');
   if (!list.length) { host.innerHTML = '<div class="empty">No strategies yet — click "+ Create Strategy" to add one.</div>'; return; }
   const untaggedCount = ALL_TRADES.filter(t => t.strategy_id == null).length;
-  host.innerHTML = [...list].reverse().map(s => `
+  host.innerHTML = [...list].reverse().map(s => {
+    const decay = DC.computeStrategyRollingWinRate(ALL_TRADES, s.id, 20);
+    const decayWarning = (decay && decay.lifetimeWinRate - decay.recentWinRate >= 0.15) ? `
+      <div style="font-size:12.5px; color:var(--critical); margin-top:10px; display:flex; align-items:center; gap:6px;">
+        <span>⚠</span>Recent ${decay.windowSize}-trade win rate (${(decay.recentWinRate * 100).toFixed(0)}%) is down from your ${(decay.lifetimeWinRate * 100).toFixed(0)}% lifetime average.
+      </div>` : '';
+    return `
     <div class="panel" style="margin-bottom:12px;">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
         <h2 style="margin:0;">${s.name}</h2>
@@ -60,11 +66,13 @@ function renderStrategiesList(list) {
         </div>
       </div>
       <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.65; white-space:pre-wrap; margin-top:10px;">${s.description || '<em>No details written.</em>'}</div>
+      ${decayWarning}
       ${untaggedCount > 0 ? `
       <div class="form-actions" style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;">
         <button class="iconbtn small" data-assign-untagged="${s.id}">Tag all ${untaggedCount} untagged trade${untaggedCount === 1 ? '' : 's'} with this strategy</button>
       </div>` : ''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
   host.querySelectorAll('[data-delete-strategy]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this strategy?')) return;

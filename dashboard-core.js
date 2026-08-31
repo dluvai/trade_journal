@@ -43,6 +43,25 @@ const DC = (function () {
 
   // ---------- data shaping ----------
 
+  // A revenge trade: taken within `windowMinutes` of the immediately-preceding trade, on the same
+  // day, when that preceding trade was a loss. Needs entered_time on BOTH trades -- silently
+  // skipped (never guessed) when either is missing, since most historical trades predate that
+  // field and shouldn't be falsely cleared just because the time is unknown.
+  function computeRevengeTradeIds(trades, windowMinutes) {
+    windowMinutes = windowMinutes || 15;
+    const toMinutes = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+    const ids = new Set();
+    for (let i = 1; i < trades.length; i++) {
+      const t = trades[i], prev = trades[i - 1];
+      if (t.date !== prev.date) continue;
+      if (prev.result !== 'LOSS') continue;
+      if (!t.entered_time || !prev.entered_time) continue;
+      const diff = toMinutes(t.entered_time) - toMinutes(prev.entered_time);
+      if (diff >= 0 && diff <= windowMinutes) ids.add(t.id);
+    }
+    return ids;
+  }
+
   function computeStats(trades) {
     const total = trades.length;
     const wins = trades.filter(t => t.result === 'WIN');
@@ -65,8 +84,9 @@ const DC = (function () {
     });
 
     const violations = trades.filter(isPlanViolation).length;
+    const revengeTrades = computeRevengeTradeIds(trades).size;
 
-    return { total, wins: wins.length, losses: losses.length, be: be.length, winRate, totalReturn, profitFactor, avgRRwin, expectancy, streak: cur, bestStreak, worstStreak, violations };
+    return { total, wins: wins.length, losses: losses.length, be: be.length, winRate, totalReturn, profitFactor, avgRRwin, expectancy, streak: cur, bestStreak, worstStreak, violations, revengeTrades };
   }
 
   function computeEquity(trades) {
@@ -137,6 +157,38 @@ const DC = (function () {
     return map;
   }
 
+  // Same date.slice(0,7) monthly bucketing as computeMonthGrid, tracking violation rate instead of pnl.
+  function computeViolationTrend(trades) {
+    const map = new Map();
+    trades.forEach(t => {
+      const k = t.date.slice(0, 7);
+      if (!map.has(k)) map.set(k, { violations: 0, total: 0 });
+      const g = map.get(k);
+      g.total++;
+      if (isPlanViolation(t)) g.violations++;
+    });
+    map.forEach(g => { g.rate = g.total ? g.violations / g.total : 0; });
+    return map;
+  }
+
+  // Compares a strategy's most recent windowSize trades against its own lifetime average win
+  // rate. Trades already arrive chronological (list_trades orders by date, id), so the last
+  // windowSize entries in array order are the most recent ones -- no re-sorting needed. Returns
+  // null when there aren't yet windowSize trades for this strategy, since a "recent vs lifetime"
+  // comparison isn't meaningful (or fair) on a strategy that's barely been used.
+  function computeStrategyRollingWinRate(trades, strategyId, windowSize) {
+    windowSize = windowSize || 20;
+    const strategyTrades = trades.filter(t => t.strategy_id === strategyId);
+    if (strategyTrades.length < windowSize) return null;
+    const winRateOf = (list) => list.filter(t => t.result === 'WIN').length / list.length;
+    return {
+      windowSize,
+      total: strategyTrades.length,
+      lifetimeWinRate: winRateOf(strategyTrades),
+      recentWinRate: winRateOf(strategyTrades.slice(-windowSize)),
+    };
+  }
+
   function computeByPair(trades) {
     const map = new Map();
     trades.forEach(t => {
@@ -177,6 +229,7 @@ const DC = (function () {
       { label: 'Current streak', value: (stats.streak > 0 ? stats.streak + 'W' : stats.streak < 0 ? Math.abs(stats.streak) + 'L' : '—'), cls: stats.streak > 0 ? 'good' : (stats.streak < 0 ? 'critical' : '') },
       { label: 'Best streak', value: noData ? '—' : stats.bestStreak + 'W', cls: noData ? '' : 'good' },
       { label: 'Plan violations', value: stats.violations, cls: stats.violations > 0 ? 'critical' : '' },
+      { label: 'Revenge trades', value: stats.revengeTrades, cls: stats.revengeTrades > 0 ? 'critical' : '' },
     ];
     if (drawdown && drawdown.maxDrawdown > 0) {
       tiles.push({ label: 'Max drawdown', value: '-' + (drawdown.maxDrawdown * 100).toFixed(1) + '%', cls: 'critical' });
@@ -358,6 +411,24 @@ const DC = (function () {
     });
   }
 
+  const HOUR_ORDER = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00');
+
+  // Reuses computeGroupStats/renderWinRateBars as-is -- only the data shaping (deriving an hour
+  // bucket from entered_time) is new. Trades without a logged time are excluded, not guessed,
+  // and called out below the chart so a thin result isn't mistaken for a bad hour.
+  function renderHourlyWinRate(hostId, trades) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const withTime = trades.filter(t => t.entered_time);
+    const excluded = trades.length - withTime.length;
+    const hourly = withTime.map(t => Object.assign({}, t, { hour: t.entered_time.slice(0, 2) + ':00' }));
+    renderWinRateBars(hostId, computeGroupStats(hourly, 'hour', HOUR_ORDER));
+    if (excluded > 0) {
+      host.insertAdjacentHTML('beforeend',
+        `<div class="empty" style="padding-top:10px; font-size:11px;">${excluded} trade${excluded === 1 ? '' : 's'} excluded — no time logged.</div>`);
+    }
+  }
+
   // ---------- monthly return heatmap ----------
 
   // Persisted across renders so a filter change doesn't reset the year picker out from under the user.
@@ -412,6 +483,60 @@ const DC = (function () {
     }
   }
 
+  // ---------- plan-adherence trend ----------
+  // Same 12-card year-grid as the Monthly Return heatmap above, but colored by violation rate
+  // instead of pnl: a clean month (0 violations) reads green, and the card gets redder the higher
+  // the violation rate for that month. isPlanViolation/VIOLATION_RE do the actual detection.
+
+  let violationTrendYear = null;
+
+  function renderViolationTrend(hostId, trades, yearFilterId) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const map = computeViolationTrend(trades);
+    if (!map.size) {
+      host.innerHTML = emptyState('No trades in this range yet — plan adherence will show up here.');
+      violationTrendYear = null;
+      if (yearFilterId) document.getElementById(yearFilterId).innerHTML = '';
+      return;
+    }
+    const years = [...new Set([...map.keys()].map(k => k.slice(0, 4)))].sort().reverse();
+    if (!violationTrendYear || !years.includes(violationTrendYear)) violationTrendYear = years[0];
+
+    const cards = MONTH_NAMES.map((name, i) => {
+      const key = `${violationTrendYear}-${String(i + 1).padStart(2, '0')}`;
+      const g = map.get(key);
+      if (!g) return `<div class="mr-card mr-empty"><div class="mr-month">${name}</div></div>`;
+      const alphaPct = Math.round(20 + g.rate * 65);
+      const base = g.rate === 0 ? GOOD : CRIT;
+      const bg = `linear-gradient(135deg, color-mix(in srgb, ${base} ${Math.min(100, alphaPct + 18)}%, var(--surface-2)) 0%, color-mix(in srgb, ${base} ${alphaPct}%, var(--surface-2)) 100%)`;
+      return `<div class="mr-card" data-key="${key}" style="background:${bg};">
+          <div class="mr-month">${name}</div>
+          <div class="mr-value" style="color:${g.rate === 0 ? GOOD : CRIT}">${(g.rate * 100).toFixed(0)}%</div>
+          <div class="mr-count">${g.total} trade${g.total === 1 ? '' : 's'}</div>
+        </div>`;
+    }).join('');
+
+    host.innerHTML = `<div class="mr-grid">${cards}</div>`;
+    host.querySelectorAll('.mr-card[data-key]').forEach(card => {
+      const g = map.get(card.dataset.key);
+      const [y, m] = card.dataset.key.split('-');
+      const tooltipHtml = () => `<div class="t-title">${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}</div>
+        <div class="t-row">Adherence: <b style="color:${g.rate === 0 ? GOOD : CRIT}">${(100 - g.rate * 100).toFixed(0)}%</b></div>
+        <div class="t-row">${g.violations} flagged / ${g.total} trades</div>`;
+      card.addEventListener('mouseenter', (e) => showTip(e, tooltipHtml()));
+      card.addEventListener('mousemove', moveTip);
+      card.addEventListener('mouseleave', hideTip);
+    });
+
+    if (yearFilterId) {
+      renderSimpleSelect(yearFilterId, years.map(y => ({ value: y, label: y })), violationTrendYear, (y) => {
+        violationTrendYear = y;
+        renderViolationTrend(hostId, trades, yearFilterId);
+      }, 'right');
+    }
+  }
+
   // ---------- best / worst ----------
 
   function renderBestWorstPairs(hostId, bw) {
@@ -435,6 +560,7 @@ const DC = (function () {
     ];
     host.innerHTML = renderBwCards(cards);
   }
+
 
   function renderBwCards(cards) {
     return `<div class="bw-grid">${cards.map(c => `
@@ -540,12 +666,15 @@ const DC = (function () {
     const host = document.getElementById(hostId);
     if (!host) return;
     if (!trades.length) { host.innerHTML = emptyState('No trades logged in this range yet.'); return; }
+    // Computed against the original chronological order -- "previous trade" is meaningless once reversed for display.
+    const revengeIds = computeRevengeTradeIds(trades);
     const ordered = [...trades].reverse();
     const canExpand = !!(hooks.onEdit || hooks.onDelete);
     const rows = ordered.map((t, i) => {
       const hasNotes = t.notes && t.notes.trim().length > 0;
       const hasCharts = t.charts && t.charts.length > 0;
       const flagged = isPlanViolation(t);
+      const isRevenge = revengeIds.has(t.id);
       const reflectCell = hasNotes ? `<button class="row-icon-btn reflect-icon" data-reflect="${i}" title="View reflection">${SPARKLE_SVG}</button>` : '<span class="icon-cell-empty">—</span>';
       const screensCell = hasCharts ? `<button class="row-icon-btn screens-icon" data-screens="${i}" title="View screenshots">${IMAGE_SVG}</button>` : '<span class="icon-cell-empty">—</span>';
       const expandCell = canExpand ? '<td>▾</td>' : '';
@@ -562,7 +691,7 @@ const DC = (function () {
           <td>${t.direction || ''}</td>
           <td class="num">${t.rr.toFixed(2)}R</td>
           <td class="num" style="color:${t.pnl >= 0 ? 'var(--good)' : 'var(--critical)'}">${fmtPct(t.pnl, 2)}</td>
-          <td><span class="badge ${t.result}">${t.result}</span>${flagged ? '<span class="badge FLAG" title="Notes mention a plan violation">⚠ PLAN</span>' : ''}</td>
+          <td><span class="badge ${t.result}">${t.result}</span>${flagged ? '<span class="badge FLAG" title="Notes mention a plan violation">⚠ PLAN</span>' : ''}${isRevenge ? '<span class="badge FLAG" title="Taken within 15 minutes of a same-day loss">⚡ REVENGE</span>' : ''}</td>
           <td class="icon-cell">${reflectCell}</td>
           <td class="icon-cell">${screensCell}</td>
           ${expandCell}
@@ -850,6 +979,11 @@ const DC = (function () {
   function renderSimpleSelect(hostId, options, currentValue, onSelect, align) {
     const el = document.getElementById(hostId);
     if (!el) return;
+    // Mutable, unlike the currentValue argument -- callers that render this once (e.g. a
+    // switcher populated at page init) and rely on onSelect alone to track new picks would
+    // otherwise compare every future click against the stale original value forever, silently
+    // no-oping the moment someone clicks back to whatever that original value was.
+    let selected = currentValue;
     const labelFor = (v) => (options.find(o => o.value === v) || {}).label ?? v;
     const optionHtml = (o) => {
       if (o.divider) return '<div class="mini-select-divider"></div>';
@@ -889,7 +1023,9 @@ const DC = (function () {
     root.querySelectorAll('.mini-select-option').forEach(opt => {
       opt.addEventListener('click', () => {
         const value = opt.dataset.value;
-        if (value === currentValue) { closePopover(); return; }
+        if (value === selected) { closePopover(); return; }
+        root.querySelectorAll('.mini-select-option').forEach(o => o.classList.toggle('is-active', o.dataset.value === value));
+        selected = value;
         labelEl.textContent = labelFor(value);
         closePopover();
         onSelect(value);
@@ -1124,7 +1260,9 @@ const DC = (function () {
     renderDonut('donutChart', stats);
     renderWinRateBars('dayChart', computeGroupStats(trades, 'day', DAY_ORDER));
     renderWinRateBars('sessionChart', computeGroupStats(trades, 'session'));
+    renderHourlyWinRate('hourChart', trades);
     renderMonthHeatmap('monthChart', trades, 'monthlyReturnYearFilter');
+    renderViolationTrend('violationChart', trades, 'violationTrendYearFilter');
     renderRRHistogram('rrHistogram', trades);
     renderCalendar('calendarGrid', 'calendarDetails', allTrades, { onEdit: opts.onEdit, onDelete: opts.onDelete }, opts.accountBalance);
     renderBestWorstPairs('bestWorstPairs', bw);
@@ -1286,6 +1424,7 @@ const DC = (function () {
     tradeModalState.editingId = trade.id;
     document.getElementById('formTitle').textContent = `Edit Trade #${trade.id} — ${trade.date} ${trade.pair || ''}`;
     tradeForm.date.value = trade.date;
+    tradeForm.entered_time.value = trade.entered_time || '';
     tradeForm.session.value = trade.session || 'London';
     tradeForm.pair.value = trade.pair || '';
     tradeForm.direction.value = trade.direction || 'Long';
@@ -1351,6 +1490,7 @@ const DC = (function () {
       const num = (v) => (v === '' || v == null) ? null : parseFloat(v);
       const payload = {
         date: fd.get('date'),
+        entered_time: fd.get('entered_time') || null,
         session: fd.get('session'),
         pair: fd.get('pair'),
         direction: fd.get('direction'),
@@ -1413,6 +1553,7 @@ const DC = (function () {
 
   return {
     fmtPct, computeStats, computeEquity, computeDrawdown, computeGroupStats, computeByPair, computeBestWorst,
+    computeStrategyRollingWinRate,
     renderAll, setupTabs, exportCsv, isPlanViolation, DAY_ORDER, renderPairTable,
     apiSend, fetchTrades, fetchStrategies, fetchTradingAccounts, fetchBootstrap, deleteTrade,
     renderAccountFilter, renderAccountComparisonTable, openAccountManageModal,

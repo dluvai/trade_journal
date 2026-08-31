@@ -42,6 +42,7 @@ import json
 import os
 import re
 import secrets
+from datetime import date, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -50,6 +51,7 @@ from PIL import Image
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import ai_bias
+import ai_weekly_review
 import auth
 import auth_pages
 import auto_sync
@@ -502,7 +504,7 @@ STATIC_ASSETS = {"dashboard-core.js", "dashboard-core.css"}
 REQUIRED_FIELDS = ["date"]
 ALLOWED_FIELDS = [
     "date", "session", "pair", "direction", "risk", "rr", "pnl",
-    "notes", "chart_daily", "chart_4h", "chart_30m", "strategy_id", "account_id",
+    "notes", "chart_daily", "chart_4h", "chart_30m", "strategy_id", "account_id", "entered_time",
 ]
 
 
@@ -529,6 +531,7 @@ NAV_ITEMS = [
     {"key": "overview", "label": "Overview", "endpoint": "overview"},
     {"key": "trades", "label": "Trades", "endpoint": "trades_page"},
     {"key": "macros", "label": "Macros", "endpoint": "macros_page"},
+    {"key": "calculator", "label": "Calculator", "endpoint": "calculator_page"},
     {"key": "calendar", "label": "Calendar", "endpoint": "calendar_page"},
     {"key": "strategy", "label": "Strategy", "endpoint": "strategy_page"},
 ]
@@ -562,6 +565,11 @@ def trades_page():
 @app.get("/macros")
 def macros_page():
     return render_template("macros.html", active_page="macros")
+
+
+@app.get("/calculator")
+def calculator_page():
+    return render_template("calculator.html", active_page="calculator")
 
 
 @app.get("/calendar")
@@ -781,6 +789,11 @@ def api_get_macro():
     return jsonify(db.list_macro())
 
 
+@app.get("/api/macro/bias-history")
+def api_bias_history():
+    return jsonify(db.list_bias_history())
+
+
 @app.put("/api/macro/<currency>")
 def api_put_macro(currency):
     currency = currency.upper()
@@ -875,6 +888,29 @@ def api_analyze():
     except Exception as e:
         return jsonify({"error": f"AI call failed: {e}"}), 502
     return jsonify({"analysis": analysis})
+
+
+@app.post("/api/weekly-review")
+def api_generate_weekly_review():
+    user_id = session["user_id"]
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())  # Monday of the current week
+    week_end = week_start + timedelta(days=6)
+    week_start_iso, week_end_iso = week_start.isoformat(), week_end.isoformat()
+    trades = [t for t in db.list_trades(user_id) if week_start_iso <= t["date"] <= week_end_iso]
+    try:
+        content = ai_weekly_review.generate_weekly_review(trades, week_start_iso, week_end_iso)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"AI call failed: {e}"}), 502
+    db.create_weekly_review(user_id, week_start_iso, week_end_iso, content)
+    return jsonify({"ok": True, "content": content, "week_start": week_start_iso, "week_end": week_end_iso})
+
+
+@app.get("/api/weekly-review")
+def api_list_weekly_reviews():
+    return jsonify(db.list_weekly_reviews(session["user_id"]))
 
 
 # ---------- billing (customer-facing) ----------

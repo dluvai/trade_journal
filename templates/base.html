@@ -28,6 +28,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h13M13 3l4 4-4 4"/><path d="M21 17H8m5 4l-4-4 4-4"/></svg>
       {% elif item.key == 'macros' %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/></svg>
+      {% elif item.key == 'calculator' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8"/><path d="M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01M8 20h.01M12 20h.01"/></svg>
       {% elif item.key == 'calendar' %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
       {% elif item.key == 'strategy' %}
@@ -83,8 +85,11 @@
   <div class="modal">
     <h2 id="formTitle">Add Trade</h2>
     <form id="tradeForm">
-      <div class="form-grid">
+      <div class="form-grid halves">
         <div class="field"><label>Date</label><input type="date" name="date" required></div>
+        <div class="field"><label>Time entered (optional)</label><input type="time" name="entered_time"></div>
+      </div>
+      <div class="form-grid">
         <div class="field"><label>Session</label>
           <input type="hidden" name="session" value="London">
           <div id="tradeSessionSelect"></div>

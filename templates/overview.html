@@ -11,6 +11,14 @@
   <h2>Account Comparison</h2>
   <div id="accountCompareTable"></div>
 </div>
+<div class="panel">
+  <div class="workspace-head">
+    <h2>Weekly Review</h2>
+    <button class="btn-primary" id="generateReviewBtn" style="width:auto; padding:8px 16px;">Generate this week's review</button>
+  </div>
+  <div id="weeklyReviewError" style="color:var(--critical); font-size:12px; margin-bottom:8px;"></div>
+  <div id="weeklyReviewList"></div>
+</div>
 <div class="grid2">
   <div class="panel">
     <h2>Equity Curve</h2>
@@ -31,11 +39,22 @@
     <div id="sessionChart"></div>
   </div>
   <div class="panel">
+    <h2>Win Rate by Hour</h2>
+    <div id="hourChart"></div>
+  </div>
+  <div class="panel">
     <div class="workspace-head">
       <h2>Monthly Return</h2>
       <div id="monthlyReturnYearFilter"></div>
     </div>
     <div id="monthChart"></div>
+  </div>
+  <div class="panel">
+    <div class="workspace-head">
+      <h2>Plan Adherence</h2>
+      <div id="violationTrendYearFilter"></div>
+    </div>
+    <div id="violationChart"></div>
   </div>
   <div class="panel">
     <h2>RR Distribution</h2>
@@ -49,7 +68,7 @@
   </div>
   <div class="panel">
     <h2>Performance by Pair</h2>
-    <div id="pairTable"></div>
+    <div class="table-scroll" style="max-height:230px;"><div id="pairTable"></div></div>
   </div>
 </div>
 {% endblock %}
@@ -81,6 +100,47 @@ function render() {
     render();
   });
   render();
+  loadWeeklyReviews();
 })();
+
+// AI weekly review: on-demand only (no scheduler) -- generating one calls Claude and costs a
+// real API call, so it only ever happens when the button is clicked, never automatically.
+function formatReviewContent(content) {
+  const stripped = content.replace(/^#+\s*.*\n+/, '');
+  const escaped = stripped.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escaped.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+}
+
+function renderWeeklyReviews(reviews) {
+  const host = document.getElementById('weeklyReviewList');
+  if (!reviews.length) { host.innerHTML = '<div class="empty">No reviews generated yet.</div>'; return; }
+  host.innerHTML = reviews.map(r => `
+    <div style="border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:10px; background:var(--surface-2);">
+      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">${r.week_start} to ${r.week_end}</div>
+      <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.7;">${formatReviewContent(r.content)}</div>
+    </div>`).join('');
+}
+
+async function loadWeeklyReviews() {
+  const reviews = await (await fetch('/api/weekly-review')).json();
+  renderWeeklyReviews(reviews);
+}
+
+document.getElementById('generateReviewBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('generateReviewBtn');
+  const errEl = document.getElementById('weeklyReviewError');
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    await DC.apiSend('POST', '/api/weekly-review', {});
+    await loadWeeklyReviews();
+  } catch (e) {
+    errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Generate this week's review";
+  }
+});
 </script>
 {% endblock %}
