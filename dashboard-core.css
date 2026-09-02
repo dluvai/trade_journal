@@ -123,6 +123,13 @@ button.mini-select-trigger .account-filter-caret, button.account-filter-trigger 
 }
 .mini-select-option:hover { background: var(--surface-2); color: var(--text-primary); }
 .mini-select-option.is-active { background: var(--accent-gradient); color: var(--accent-text); }
+.acct-chip-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.acct-chip {
+  padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); background: transparent;
+  color: var(--text-secondary); font-size: 12.5px; font-family: inherit; cursor: pointer; transition: all .12s ease;
+}
+.acct-chip:hover { border-color: var(--series-1); color: var(--text-primary); }
+.acct-chip.is-active { background: var(--accent-gradient); color: var(--accent-text); border-color: transparent; }
 .mini-select-divider { height: 1px; background: var(--border); margin: 5px 3px; }
 .mini-select-header {
   font-size: 10px; color: var(--text-muted); font-weight: 700; text-transform: uppercase;

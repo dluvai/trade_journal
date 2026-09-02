@@ -100,6 +100,13 @@ SCHEMA_STATEMENTS = [
         content TEXT NOT NULL,
         created_at TEXT NOT NULL
     )""",
+    # A trade copy-traded across several funded accounts needs more than the single trades.account_id
+    # column can hold -- this join table is the source of truth once a trade has any rows here.
+    """CREATE TABLE IF NOT EXISTS trade_accounts (
+        trade_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        PRIMARY KEY (trade_id, account_id)
+    )""",
 ]
 
 MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD"]
@@ -306,7 +313,37 @@ def list_trades(user_id):
         WHERE trades.user_id = ?
         ORDER BY trades.date ASC, trades.id ASC
     """, (user_id,)).rows
-    return [row_to_dict(r) for r in rows]
+    trades = [row_to_dict(r) for r in rows]
+
+    trade_ids = [t["id"] for t in trades]
+    accounts_by_trade = {}
+    if trade_ids:
+        placeholders = ",".join("?" * len(trade_ids))
+        ta_rows = conn.execute(
+            f"""SELECT trade_accounts.trade_id, trade_accounts.account_id, trading_accounts.name
+                FROM trade_accounts
+                JOIN trading_accounts ON trading_accounts.id = trade_accounts.account_id
+                WHERE trade_accounts.trade_id IN ({placeholders})
+                ORDER BY trading_accounts.name ASC""",
+            trade_ids,
+        ).rows
+        for r in ta_rows:
+            accounts_by_trade.setdefault(r["trade_id"], []).append({"id": r["account_id"], "name": r["name"]})
+
+    for t in trades:
+        # A trade tagged via the new copy-trade UI has rows here; an older single-account trade
+        # (or one never re-saved) doesn't, so it falls back to the legacy account_id/account_name columns.
+        tagged = accounts_by_trade.get(t["id"])
+        if tagged:
+            t["account_ids"] = [a["id"] for a in tagged]
+            t["account_names"] = [a["name"] for a in tagged]
+        elif t.get("account_id") is not None:
+            t["account_ids"] = [t["account_id"]]
+            t["account_names"] = [t["account_name"]]
+        else:
+            t["account_ids"] = []
+            t["account_names"] = []
+    return trades
 
 
 def _strategy_id_or_none(fields):
@@ -319,10 +356,30 @@ def _account_id_or_none(fields):
     return int(raw) if raw not in (None, "") else None
 
 
+def _account_ids_from_fields(fields):
+    # account_ids (a list, for copy-traded trades tagged to several accounts) takes priority;
+    # falls back to the legacy single account_id when a caller only sends that.
+    raw_ids = fields.get("account_ids")
+    if raw_ids is not None:
+        return [int(a) for a in raw_ids if a not in (None, "")]
+    single = _account_id_or_none(fields)
+    return [single] if single is not None else []
+
+
+def _set_trade_accounts(conn, trade_id, account_ids):
+    conn.execute("DELETE FROM trade_accounts WHERE trade_id = ?", (trade_id,))
+    for account_id in account_ids:
+        conn.execute(
+            "INSERT INTO trade_accounts (trade_id, account_id) VALUES (?, ?)",
+            (trade_id, account_id),
+        )
+
+
 def insert_trade(user_id, fields):
     now = datetime.now().isoformat(timespec="seconds")
     pnl = float(fields.get("pnl") or 0)
     result = derive_result(float(fields.get("rr") or 0))
+    account_ids = _account_ids_from_fields(fields)
     conn = get_conn()
     rs = conn.execute(
         """INSERT INTO trades (date, session, pair, direction, risk, rr, pnl, result, notes,
@@ -333,11 +390,13 @@ def insert_trade(user_id, fields):
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), _account_id_or_none(fields), fields.get("entered_time") or None,
+            _strategy_id_or_none(fields), account_ids[0] if account_ids else None, fields.get("entered_time") or None,
             user_id, now, now,
         ),
     )
     new_id = rs.last_insert_rowid
+    if account_ids:
+        _set_trade_accounts(conn, new_id, account_ids)
     return new_id
 
 
@@ -345,6 +404,7 @@ def update_trade(user_id, trade_id, fields):
     now = datetime.now().isoformat(timespec="seconds")
     pnl = float(fields.get("pnl") or 0)
     result = derive_result(float(fields.get("rr") or 0))
+    account_ids = _account_ids_from_fields(fields)
     conn = get_conn()
     conn.execute(
         """UPDATE trades SET date=?, session=?, pair=?, direction=?, risk=?, rr=?, pnl=?, result=?,
@@ -355,10 +415,11 @@ def update_trade(user_id, trade_id, fields):
             float(fields["risk"]) if fields.get("risk") not in (None, "") else None,
             float(fields.get("rr") or 0), pnl, result, fields.get("notes"),
             fields.get("chart_daily"), fields.get("chart_4h"), fields.get("chart_30m"),
-            _strategy_id_or_none(fields), _account_id_or_none(fields), fields.get("entered_time") or None,
+            _strategy_id_or_none(fields), account_ids[0] if account_ids else None, fields.get("entered_time") or None,
             now, trade_id, user_id,
         ),
     )
+    _set_trade_accounts(conn, trade_id, account_ids)
 
 
 def delete_trade(user_id, trade_id):

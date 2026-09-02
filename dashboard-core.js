@@ -644,7 +644,7 @@ const DC = (function () {
       return `<tr>
         <td class="strong">${p.pair}</td>
         <td class="num">${p.total}</td>
-        <td class="num"><span class="winrate-cell"><span class="winbar-track"><span class="winbar-fill" style="width:${(wr * 100).toFixed(0)}%"></span></span>${(wr * 100).toFixed(0)}%</span></td>
+        <td class="num">${(wr * 100).toFixed(0)}%</td>
         <td class="num" style="color:${p.pnl >= 0 ? 'var(--good)' : 'var(--critical)'}">${fmtPct(p.pnl, 2)}</td>
         ${extraCells}
       </tr>`;
@@ -1143,12 +1143,12 @@ const DC = (function () {
     const groups = [];
     accounts.forEach(a => {
       if (selectedIds.includes(a.id)) {
-        groups.push({ name: a.name, trades: trades.filter(t => t.account_id === a.id) });
+        // A copy-traded trade tagged to several accounts counts toward each one's stats.
+        groups.push({ name: a.name, trades: trades.filter(t => (t.account_ids || []).includes(a.id)) });
       }
     });
     if (selectedIds.includes('unassigned')) {
-      const knownIds = accounts.map(a => a.id);
-      groups.push({ name: 'Unassigned', trades: trades.filter(t => !knownIds.includes(t.account_id)) });
+      groups.push({ name: 'Unassigned', trades: trades.filter(t => !(t.account_ids && t.account_ids.length)) });
     }
     if (groups.length < 2) return false;
 
@@ -1158,7 +1158,7 @@ const DC = (function () {
     });
     renderPairTable(hostId, rows, 'Account', [
       { key: 'profitFactor', header: 'Profit Factor', format: v => isFinite(v) ? v.toFixed(2) : '∞' },
-      { key: 'expectancy', header: 'Expectancy', format: v => v.toFixed(2) },
+      { key: 'expectancy', header: 'Expectancy', format: v => (v >= 0 ? '+' : '') + v.toFixed(2) },
     ]);
     return true;
   }
@@ -1400,7 +1400,7 @@ const DC = (function () {
   ];
   const TRADE_DIRECTION_OPTIONS = [{ value: 'Long', label: 'Long' }, { value: 'Short', label: 'Short' }];
   let tradeStrategyOptions = [{ value: '', label: 'No strategy' }];
-  let tradeAccountOptions = [{ value: '', label: 'Unassigned' }];
+  let tradeAccountsList = [];
 
   function syncTradeSelects(tradeForm) {
     renderSimpleSelect('tradeSessionSelect', TRADE_SESSION_OPTIONS, tradeForm.session.value, (v) => {
@@ -1412,8 +1412,29 @@ const DC = (function () {
     renderSimpleSelect('tradeStrategySelect', tradeStrategyOptions, tradeForm.strategy_id.value, (v) => {
       tradeForm.strategy_id.value = v; syncTradeSelects(tradeForm);
     });
-    renderSimpleSelect('tradeAccountSelect', tradeAccountOptions, tradeForm.account_id.value, (v) => {
-      tradeForm.account_id.value = v; syncTradeSelects(tradeForm);
+    renderTradeAccountChips();
+  }
+
+  // Multiple accounts, not a single dropdown value, since one trade can be copy-traded across
+  // several funded accounts -- selection lives on tradeModalState, not a form field.
+  function renderTradeAccountChips() {
+    const host = document.getElementById('tradeAccountSelect');
+    if (!host || !tradeModalState) return;
+    if (!tradeAccountsList.length) {
+      host.innerHTML = '<div class="empty" style="padding:0; font-size:11.5px;">No accounts yet — add one from the account switcher.</div>';
+      return;
+    }
+    host.innerHTML = tradeAccountsList.map(a => `
+      <button type="button" class="acct-chip${tradeModalState.selectedAccountIds.includes(a.id) ? ' is-active' : ''}" data-acct="${a.id}">${a.name}</button>
+    `).join('');
+    host.querySelectorAll('[data-acct]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.dataset.acct);
+        const ids = tradeModalState.selectedAccountIds;
+        const idx = ids.indexOf(id);
+        if (idx === -1) ids.push(id); else ids.splice(idx, 1);
+        renderTradeAccountChips();
+      });
     });
   }
 
@@ -1432,7 +1453,9 @@ const DC = (function () {
     tradeForm.rr.value = trade.rr;
     tradeForm.pnl.value = (trade.pnl * 100).toFixed(2);
     tradeForm.strategy_id.value = trade.strategy_id != null ? trade.strategy_id : '';
-    tradeForm.account_id.value = trade.account_id != null ? trade.account_id : '';
+    tradeModalState.selectedAccountIds = (trade.account_ids && trade.account_ids.length)
+      ? [...trade.account_ids]
+      : (trade.account_id != null ? [trade.account_id] : []);
     tradeForm.notes.value = trade.notes || '';
     tradeForm.chart_daily.value = (trade.charts.find(c => c.label === 'Daily') || {}).link || '';
     tradeForm.chart_4h.value = (trade.charts.find(c => c.label === '4H') || {}).link || '';
@@ -1445,6 +1468,7 @@ const DC = (function () {
   function openAddTradeModal() {
     if (!tradeModalState) return;
     tradeModalState.editingId = null;
+    tradeModalState.selectedAccountIds = [];
     const tradeForm = document.getElementById('tradeForm');
     document.getElementById('formTitle').textContent = 'Add Trade';
     tradeForm.reset();
@@ -1460,7 +1484,7 @@ const DC = (function () {
   function initTradeModal() {
     const modalBackdrop = document.getElementById('modalBackdrop');
     if (!modalBackdrop) return;
-    tradeModalState = { editingId: null };
+    tradeModalState = { editingId: null, selectedAccountIds: [] };
     const tradeForm = document.getElementById('tradeForm');
     const formError = document.getElementById('formError');
 
@@ -1468,13 +1492,14 @@ const DC = (function () {
 
     fetchBootstrap().then(({ strategies, accounts }) => {
       tradeStrategyOptions = [{ value: '', label: 'No strategy' }].concat(strategies.map(s => ({ value: String(s.id), label: s.name })));
-      tradeAccountOptions = [{ value: '', label: 'Unassigned' }].concat(accounts.map(a => ({ value: String(a.id), label: a.name })));
+      tradeAccountsList = accounts;
       syncTradeSelects(tradeForm);
     }).catch(() => {});
 
     function closeForm() {
       modalBackdrop.classList.add('hidden');
       tradeModalState.editingId = null;
+      tradeModalState.selectedAccountIds = [];
       tradeForm.reset();
     }
 
@@ -1498,7 +1523,7 @@ const DC = (function () {
         rr: num(fd.get('rr')) || 0,
         pnl: num(fd.get('pnl')) != null ? num(fd.get('pnl')) / 100 : 0,
         strategy_id: fd.get('strategy_id') || null,
-        account_id: fd.get('account_id') || null,
+        account_ids: tradeModalState.selectedAccountIds,
         notes: fd.get('notes'),
         chart_daily: fd.get('chart_daily') || null,
         chart_4h: fd.get('chart_4h') || null,

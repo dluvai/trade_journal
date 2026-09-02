@@ -504,7 +504,7 @@ STATIC_ASSETS = {"dashboard-core.js", "dashboard-core.css"}
 REQUIRED_FIELDS = ["date"]
 ALLOWED_FIELDS = [
     "date", "session", "pair", "direction", "risk", "rr", "pnl",
-    "notes", "chart_daily", "chart_4h", "chart_30m", "strategy_id", "account_id", "entered_time",
+    "notes", "chart_daily", "chart_4h", "chart_30m", "strategy_id", "account_id", "account_ids", "entered_time",
 ]
 
 

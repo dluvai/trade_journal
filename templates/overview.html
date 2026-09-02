@@ -89,8 +89,11 @@ let dateRange = DC.defaultDateRange();
 function render() {
   const dateFiltered = DC.filterTradesByRange(ALL_TRADES, dateRange);
   const combined = dateFiltered.filter(t => {
-    const bucket = ALL_ACCOUNTS.some(a => a.id === t.account_id) ? t.account_id : 'unassigned';
-    return selectedAccountIds.includes(bucket);
+    // A copy-traded trade matches if ANY of its tagged accounts is selected; a trade whose only
+    // tagged accounts have since been deleted falls back to the 'unassigned' bucket, same as before.
+    const knownIds = (t.account_ids || []).filter(id => ALL_ACCOUNTS.some(a => a.id === id));
+    if (!knownIds.length) return selectedAccountIds.includes('unassigned');
+    return knownIds.some(id => selectedAccountIds.includes(id));
   });
   DC.renderAll(combined, dateRange, {
     onRangeChange: (r) => { dateRange = r; render(); },
