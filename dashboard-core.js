@@ -1401,6 +1401,39 @@ const DC = (function () {
   const TRADE_DIRECTION_OPTIONS = [{ value: 'Long', label: 'Long' }, { value: 'Short', label: 'Short' }];
   let tradeStrategyOptions = [{ value: '', label: 'No strategy' }];
   let tradeAccountsList = [];
+  let tradePairsList = [];
+
+  // Pair stays free-text (a brand-new pair must always be enterable) but suggests from every
+  // pair already logged -- that list grows on its own as trades are saved, no separate storage needed.
+  function renderPairSuggestions(query) {
+    const wrap = document.getElementById('tradePairWrap');
+    const pop = document.getElementById('tradePairPopover');
+    if (!wrap || !pop) return;
+    const q = query.trim().toUpperCase();
+    const matches = tradePairsList.filter(p => p.toUpperCase().includes(q)).slice(0, 8);
+    if (!matches.length) { wrap.classList.remove('is-open'); return; }
+    pop.innerHTML = matches.map(p => `<div class="mini-select-option" data-pair="${p}">${p}</div>`).join('');
+    pop.querySelectorAll('[data-pair]').forEach(opt => {
+      opt.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        document.getElementById('tradePairInput').value = opt.dataset.pair;
+        wrap.classList.remove('is-open');
+      });
+    });
+    wrap.classList.add('is-open');
+  }
+
+  let pairAutocompleteInit = false;
+  function initPairAutocomplete() {
+    if (pairAutocompleteInit) return;
+    pairAutocompleteInit = true;
+    const input = document.getElementById('tradePairInput');
+    const wrap = document.getElementById('tradePairWrap');
+    if (!input) return;
+    input.addEventListener('input', () => renderPairSuggestions(input.value));
+    input.addEventListener('focus', () => renderPairSuggestions(input.value));
+    input.addEventListener('blur', () => setTimeout(() => wrap.classList.remove('is-open'), 120));
+  }
 
   function syncTradeSelects(tradeForm) {
     renderSimpleSelect('tradeSessionSelect', TRADE_SESSION_OPTIONS, tradeForm.session.value, (v) => {
@@ -1490,11 +1523,13 @@ const DC = (function () {
 
     syncTradeSelects(tradeForm);
 
-    fetchBootstrap().then(({ strategies, accounts }) => {
+    fetchBootstrap().then(({ strategies, accounts, trades }) => {
       tradeStrategyOptions = [{ value: '', label: 'No strategy' }].concat(strategies.map(s => ({ value: String(s.id), label: s.name })));
       tradeAccountsList = accounts;
+      tradePairsList = [...new Set(trades.map(t => t.pair).filter(Boolean))].sort();
       syncTradeSelects(tradeForm);
     }).catch(() => {});
+    initPairAutocomplete();
 
     function closeForm() {
       modalBackdrop.classList.add('hidden');

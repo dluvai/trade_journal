@@ -94,7 +94,12 @@
           <input type="hidden" name="session" value="London">
           <div id="tradeSessionSelect"></div>
         </div>
-        <div class="field"><label>Pair</label><input type="text" name="pair" required></div>
+        <div class="field"><label>Pair</label>
+          <div class="mini-select" id="tradePairWrap">
+            <input type="text" name="pair" id="tradePairInput" required autocomplete="off">
+            <div class="mini-select-popover" id="tradePairPopover"></div>
+          </div>
+        </div>
         <div class="field"><label>Direction</label>
           <input type="hidden" name="direction" value="Long">
           <div id="tradeDirectionSelect"></div>
